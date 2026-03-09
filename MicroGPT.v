@@ -2382,9 +2382,12 @@ Proof.
     + apply row_ok_zero_vec.
     + destruct Hm as [Hlen _].
       simpl in Hgrad.
+      rewrite <- Hgrad in Hlen.
       discriminate.
   - destruct m as [|row rows']; simpl in *.
     + destruct Hm as [Hlen _].
+      simpl in Hgrad.
+      rewrite <- Hlen in Hgrad.
       discriminate.
     + destruct Hm as [Hlen Hrows].
       inversion Hrows as [|? ? Hrow Hrows']; subst.

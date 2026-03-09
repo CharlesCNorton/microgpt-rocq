@@ -2345,7 +2345,8 @@ Lemma vec_relu_mask_row_ok :
 Proof.
   intros width xs Hx.
   unfold row_ok, vec_relu_mask in *.
-  now rewrite length_map, Hx.
+  rewrite length_map.
+  exact Hx.
 Qed.
 
 Lemma outer_product_ok :

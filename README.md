@@ -11,7 +11,7 @@ The repository contains:
 
 ## What Is Implemented
 
-The current model is a compact transformer-style inference core with an attached verified training surface for a linear readout head.
+The current model is a compact transformer-style language-model core with attached verified training and generation surfaces.
 
 Implemented pieces:
 
@@ -20,6 +20,10 @@ Implemented pieces:
 - causal self-attention
 - an MLP block
 - output logits
+- normalized output distributions
+- sequence-level token loss
+- batch loss aggregation
+- greedy autoregressive generation
 - next-token prediction by argmax
 - a linear readout head over the final hidden state
 - squared loss for the readout head
@@ -41,6 +45,8 @@ followed by explicit normalization by the prefix score sum. This keeps the atten
 - cached attention is extensionally equal to recomputed prefix attention
 - transformer block shape preservation
 - forward-pass output shape preservation
+- batch interface length preservation
+- greedy generation length preservation
 - final hidden-state shape preservation
 - readout gradient shape preservation
 - explicit reverse-mode gradient formulas for the readout head
@@ -56,6 +62,9 @@ The extracted executable prints three concrete model runs:
 
 The executable also prints:
 
+- a short greedy continuation for `demo1`
+- an encoded sequence loss for `demo1`
+- an encoded batch loss for `demo1`
 - the encoded squared loss for the `demo2` readout example
 - the encoded reverse-mode gradients for the readout weights
 - the encoded reverse-mode gradient for the readout bias
@@ -91,7 +100,6 @@ Natural follow-on work includes:
 
 - replacing the current rational kernel with a closer analogue of softmax attention
 - extending reverse-mode differentiation from the readout head to the transformer core
-- adding sequence-level or token-level language-model losses
 - introducing a more realistic floating-point or fixed-point numeric model
 - proving stronger equivalences between optimized and reference implementations
 - targeting additional extracted runtimes, including Crane

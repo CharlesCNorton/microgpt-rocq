@@ -1,4 +1,6 @@
 
+val length : 'a1 list -> int
+
 val app : 'a1 list -> 'a1 list -> 'a1 list
 
 type comparison =
@@ -8,9 +10,15 @@ type comparison =
 
 val add : int -> int -> int
 
+module Nat :
+ sig
+ end
+
 val map : ('a1 -> 'a2) -> 'a1 list -> 'a2 list
 
 val repeat : 'a1 -> int -> 'a1 list
+
+val tl : 'a1 list -> 'a1 list
 
 val last : 'a1 list -> 'a1 -> 'a1
 
@@ -87,6 +95,8 @@ val qminus : q -> q -> q
 
 val qinv : q -> q
 
+val qdiv : q -> q -> q
+
 type scalar = q
 
 type vector = scalar list
@@ -96,6 +106,8 @@ type matrix = vector list
 val zero_vec : int -> vector
 
 val relu : scalar -> scalar
+
+val q_of_nat : int -> scalar
 
 val vec_add : vector -> vector -> vector
 
@@ -154,6 +166,44 @@ val argmax : vector -> int
 
 val predict_next : hyperParams -> model -> int list -> int
 
+val sum_scalars : scalar list -> scalar
+
+val mean_scalars : scalar list -> scalar
+
+val one_hot_vector_aux : int -> int -> int -> vector
+
+val one_hot_vector : int -> int -> vector
+
+val output_score : scalar -> scalar
+
+val output_scores : vector -> vector
+
+val normalized_output_distribution : vector -> vector
+
+val lm_square : scalar -> scalar
+
+val lm_scalar_squared_loss : scalar -> scalar -> scalar
+
+val lm_squared_error_sum : vector -> vector -> scalar
+
+val token_distribution_loss : vector -> int -> scalar
+
+val sequence_token_losses : vector list -> int list -> scalar list
+
+val sequence_distribution_loss : vector list -> int list -> scalar
+
+val next_token_targets : int list -> int list
+
+val model_sequence_loss : hyperParams -> model -> int list -> scalar
+
+type batch = int list list
+
+val batch_losses : hyperParams -> model -> batch -> scalar list
+
+val batch_mean_loss : hyperParams -> model -> batch -> scalar
+
+val greedy_generate : int -> hyperParams -> model -> int list -> int list
+
 val square : scalar -> scalar
 
 val linear_readout : vector -> scalar -> vector -> scalar
@@ -184,6 +234,14 @@ val demo1_tokens : int list
 val demo1_logits : vector list
 
 val demo1_prediction : int
+
+val demo1_generated_2 : int list
+
+val demo1_batch : batch
+
+val demo1_sequence_loss : scalar
+
+val demo1_batch_loss : scalar
 
 val demo2_hp : hyperParams
 
@@ -234,6 +292,10 @@ val demo1_logits_encoded : encoded_scalar list list
 val demo2_logits_encoded : encoded_scalar list list
 
 val demo3_logits_encoded : encoded_scalar list list
+
+val demo1_sequence_loss_encoded : encoded_scalar
+
+val demo1_batch_loss_encoded : encoded_scalar
 
 val demo2_train_loss_encoded : encoded_scalar
 

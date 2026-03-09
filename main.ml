@@ -19,14 +19,26 @@ let string_of_encoded_vector xs =
 let string_of_encoded_matrix rows =
   "[" ^ String.concat "; " (List.map string_of_encoded_vector rows) ^ "]"
 
-let print_demo name tokens prediction logits =
+let print_demo ?generated ?sequence_loss ?batch_loss name tokens prediction logits =
   Printf.printf "%s\n" name;
   Printf.printf "  tokens=%s\n" (string_of_int_list tokens);
+  (match generated with
+   | None -> ()
+   | Some xs -> Printf.printf "  generated=%s\n" (string_of_int_list xs));
   Printf.printf "  prediction=%d\n" prediction;
-  Printf.printf "  logits=%s\n" (string_of_encoded_matrix logits)
+  Printf.printf "  logits=%s\n" (string_of_encoded_matrix logits);
+  (match sequence_loss with
+   | None -> ()
+   | Some x -> Printf.printf "  sequence_loss=%s\n" (string_of_encoded_scalar x));
+  (match batch_loss with
+   | None -> ()
+   | Some x -> Printf.printf "  batch_loss=%s\n" (string_of_encoded_scalar x))
 
 let () =
   print_demo
+    ~generated:Microgpt_extracted.demo1_generated_2
+    ~sequence_loss:Microgpt_extracted.demo1_sequence_loss_encoded
+    ~batch_loss:Microgpt_extracted.demo1_batch_loss_encoded
     "demo1"
     Microgpt_extracted.demo1_tokens
     Microgpt_extracted.demo1_prediction

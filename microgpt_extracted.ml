@@ -1,4 +1,10 @@
 
+(** val length : 'a1 list -> int **)
+
+let rec length = function
+| [] -> 0
+| _ :: l' -> Stdlib.Int.succ (length l')
+
 (** val app : 'a1 list -> 'a1 list -> 'a1 list **)
 
 let rec app l m =
@@ -18,6 +24,10 @@ module Coq__1 = struct
 end
 include Coq__1
 
+module Nat =
+ struct
+ end
+
 (** val map : ('a1 -> 'a2) -> 'a1 list -> 'a2 list **)
 
 let rec map f = function
@@ -31,6 +41,12 @@ let rec repeat x n =
     (fun _ -> [])
     (fun k -> x :: (repeat x k))
     n
+
+(** val tl : 'a1 list -> 'a1 list **)
+
+let tl = function
+| [] -> []
+| _ :: l' -> l'
 
 (** val last : 'a1 list -> 'a1 -> 'a1 **)
 
@@ -396,6 +412,11 @@ let qinv x =
     (fun p -> { qnum = ((~-) x.qden); qden = p })
     x.qnum
 
+(** val qdiv : q -> q -> q **)
+
+let qdiv x y =
+  qmult x (qinv y)
+
 type scalar = q
 
 type vector = scalar list
@@ -411,6 +432,14 @@ let zero_vec width =
 
 let relu x =
   if qle_bool x { qnum = 0; qden = 1 } then { qnum = 0; qden = 1 } else x
+
+(** val q_of_nat : int -> scalar **)
+
+let rec q_of_nat n =
+  (fun fO fS n -> if n=0 then fO () else fS (n-1))
+    (fun _ -> { qnum = 0; qden = 1 })
+    (fun n' -> qplus { qnum = 1; qden = 1 } (q_of_nat n'))
+    n
 
 (** val vec_add : vector -> vector -> vector **)
 
@@ -602,6 +631,134 @@ let predict_next hp m tokens =
   let logits = forward hp m tokens in
   let final_logits = last logits (zero_vec hp.hp_vocab) in argmax final_logits
 
+(** val sum_scalars : scalar list -> scalar **)
+
+let rec sum_scalars = function
+| [] -> { qnum = 0; qden = 1 }
+| x :: xs' -> qplus x (sum_scalars xs')
+
+(** val mean_scalars : scalar list -> scalar **)
+
+let mean_scalars xs = match xs with
+| [] -> { qnum = 0; qden = 1 }
+| _ :: _ -> qdiv (sum_scalars xs) (q_of_nat (length xs))
+
+(** val one_hot_vector_aux : int -> int -> int -> vector **)
+
+let rec one_hot_vector_aux remaining target idx =
+  (fun fO fS n -> if n=0 then fO () else fS (n-1))
+    (fun _ -> [])
+    (fun remaining' ->
+    (if (=) idx target then { qnum = 1; qden = 1 } else { qnum = 0; qden = 1 }) :: 
+    (one_hot_vector_aux remaining' target (Stdlib.Int.succ idx)))
+    remaining
+
+(** val one_hot_vector : int -> int -> vector **)
+
+let one_hot_vector width target =
+  one_hot_vector_aux width target 0
+
+(** val output_score : scalar -> scalar **)
+
+let output_score logit =
+  qplus { qnum = 1; qden = 1 } (qmult logit logit)
+
+(** val output_scores : vector -> vector **)
+
+let output_scores logits =
+  map output_score logits
+
+(** val normalized_output_distribution : vector -> vector **)
+
+let normalized_output_distribution logits =
+  let scores = output_scores logits in
+  let denom = sum_scalars scores in
+  if qeq_bool denom { qnum = 0; qden = 1 }
+  then zero_vec (length logits)
+  else map (fun score -> qdiv score denom) scores
+
+(** val lm_square : scalar -> scalar **)
+
+let lm_square x =
+  qmult x x
+
+(** val lm_scalar_squared_loss : scalar -> scalar -> scalar **)
+
+let lm_scalar_squared_loss prediction target =
+  let diff = qminus prediction target in lm_square diff
+
+(** val lm_squared_error_sum : vector -> vector -> scalar **)
+
+let rec lm_squared_error_sum preds targets =
+  match preds with
+  | [] -> { qnum = 0; qden = 1 }
+  | pred :: preds' ->
+    (match targets with
+     | [] -> { qnum = 0; qden = 1 }
+     | target :: targets' ->
+       qplus (lm_scalar_squared_loss pred target)
+         (lm_squared_error_sum preds' targets'))
+
+(** val token_distribution_loss : vector -> int -> scalar **)
+
+let token_distribution_loss logits target =
+  let preds = normalized_output_distribution logits in
+  (match preds with
+   | [] -> { qnum = 0; qden = 1 }
+   | _ :: _ ->
+     qdiv
+       (lm_squared_error_sum preds (one_hot_vector (length logits) target))
+       (q_of_nat (length preds)))
+
+(** val sequence_token_losses : vector list -> int list -> scalar list **)
+
+let rec sequence_token_losses logits_seq targets =
+  match logits_seq with
+  | [] -> []
+  | logits :: logits_seq' ->
+    (match targets with
+     | [] -> []
+     | target :: targets' ->
+       (token_distribution_loss logits target) :: (sequence_token_losses
+                                                    logits_seq' targets'))
+
+(** val sequence_distribution_loss : vector list -> int list -> scalar **)
+
+let sequence_distribution_loss logits_seq targets =
+  mean_scalars (sequence_token_losses logits_seq targets)
+
+(** val next_token_targets : int list -> int list **)
+
+let next_token_targets =
+  tl
+
+(** val model_sequence_loss : hyperParams -> model -> int list -> scalar **)
+
+let model_sequence_loss hp m tokens =
+  sequence_distribution_loss (forward hp m tokens) (next_token_targets tokens)
+
+type batch = int list list
+
+(** val batch_losses : hyperParams -> model -> batch -> scalar list **)
+
+let batch_losses hp m batch0 =
+  map (model_sequence_loss hp m) batch0
+
+(** val batch_mean_loss : hyperParams -> model -> batch -> scalar **)
+
+let batch_mean_loss hp m batch0 =
+  mean_scalars (batch_losses hp m batch0)
+
+(** val greedy_generate :
+    int -> hyperParams -> model -> int list -> int list **)
+
+let rec greedy_generate fuel hp m tokens =
+  (fun fO fS n -> if n=0 then fO () else fS (n-1))
+    (fun _ -> tokens)
+    (fun fuel' ->
+    greedy_generate fuel' hp m (app tokens ((predict_next hp m tokens) :: [])))
+    fuel
+
 (** val square : scalar -> scalar **)
 
 let square x =
@@ -699,6 +856,29 @@ let demo1_logits =
 
 let demo1_prediction =
   predict_next demo1_hp demo1_model demo1_tokens
+
+(** val demo1_generated_2 : int list **)
+
+let demo1_generated_2 =
+  greedy_generate (Stdlib.Int.succ (Stdlib.Int.succ 0)) demo1_hp demo1_model
+    demo1_tokens
+
+(** val demo1_batch : batch **)
+
+let demo1_batch =
+  demo1_tokens :: ((0 :: ((Stdlib.Int.succ 0) :: ((Stdlib.Int.succ
+    (Stdlib.Int.succ 0)) :: []))) :: (((Stdlib.Int.succ (Stdlib.Int.succ
+    0)) :: ((Stdlib.Int.succ 0) :: [])) :: []))
+
+(** val demo1_sequence_loss : scalar **)
+
+let demo1_sequence_loss =
+  model_sequence_loss demo1_hp demo1_model demo1_tokens
+
+(** val demo1_batch_loss : scalar **)
+
+let demo1_batch_loss =
+  batch_mean_loss demo1_hp demo1_model demo1_batch
 
 (** val demo2_hp : hyperParams **)
 
@@ -865,6 +1045,16 @@ let demo2_logits_encoded =
 
 let demo3_logits_encoded =
   encode_matrix demo3_logits
+
+(** val demo1_sequence_loss_encoded : encoded_scalar **)
+
+let demo1_sequence_loss_encoded =
+  encode_scalar demo1_sequence_loss
+
+(** val demo1_batch_loss_encoded : encoded_scalar **)
+
+let demo1_batch_loss_encoded =
+  encode_scalar demo1_batch_loss
 
 (** val demo2_train_loss_encoded : encoded_scalar **)
 

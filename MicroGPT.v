@@ -74,9 +74,30 @@ Definition zero_vec (width : nat) : Vector :=
 Definition relu (x : Scalar) : Scalar :=
   if Qle_bool x 0 then 0 else x.
 
-(** Rational injection for list lengths and averaging denominators. *)
-Definition q_of_nat (n : nat) : Scalar :=
-  inject_Z (Z.of_nat n).
+(** Rational conversion for list lengths and averaging denominators.  Keeping
+    this recursive makes positivity proofs lightweight. *)
+Fixpoint q_of_nat (n : nat) : Scalar :=
+  match n with
+  | O => 0
+  | S n' => 1 + q_of_nat n'
+  end.
+
+Lemma q_of_nat_nonnegative :
+  forall n,
+    0 <= q_of_nat n.
+Proof.
+  induction n as [|n IH]; simpl; lra.
+Qed.
+
+Lemma q_of_nat_positive :
+  forall n,
+    0 < q_of_nat (S n).
+Proof.
+  intros n.
+  simpl.
+  pose proof (q_of_nat_nonnegative n).
+  lra.
+Qed.
 
 (** * List-level tensor operators. *)
 
@@ -905,6 +926,287 @@ Definition predict_next (hp : HyperParams) (m : Model) (tokens : list nat) : nat
   let final_logits := last logits (zero_vec (hp_vocab hp)) in
   argmax final_logits.
 
+(** * Sequence-level language-model surface. *)
+
+Fixpoint sum_scalars (xs : list Scalar) : Scalar :=
+  match xs with
+  | [] => 0
+  | x :: xs' => x + sum_scalars xs'
+  end.
+
+Definition mean_scalars (xs : list Scalar) : Scalar :=
+  match xs with
+  | [] => 0
+  | _ => sum_scalars xs / q_of_nat (length xs)
+  end.
+
+Fixpoint one_hot_vector_aux (remaining target idx : nat) : Vector :=
+  match remaining with
+  | O => []
+  | S remaining' =>
+      (if Nat.eqb idx target then 1 else 0)
+      :: one_hot_vector_aux remaining' target (S idx)
+  end.
+
+Definition one_hot_vector (width target : nat) : Vector :=
+  one_hot_vector_aux width target 0.
+
+Definition output_score (logit : Scalar) : Scalar :=
+  1 + logit * logit.
+
+Definition output_scores (logits : Vector) : Vector :=
+  map output_score logits.
+
+Definition normalized_output_distribution (logits : Vector) : Vector :=
+  let scores := output_scores logits in
+  let denom := sum_scalars scores in
+  if Qeq_bool denom 0
+  then zero_vec (length logits)
+  else map (fun score => score / denom) scores.
+
+Definition lm_square (x : Scalar) : Scalar :=
+  x * x.
+
+Definition lm_scalar_squared_loss (prediction target : Scalar) : Scalar :=
+  let diff := prediction - target in
+  lm_square diff.
+
+Fixpoint lm_squared_error_sum (preds targets : Vector) : Scalar :=
+  match preds, targets with
+  | pred :: preds', target :: targets' =>
+      lm_scalar_squared_loss pred target + lm_squared_error_sum preds' targets'
+  | _, _ => 0
+  end.
+
+Definition lm_mean_squared_error (preds targets : Vector) : Scalar :=
+  match preds with
+  | [] => 0
+  | _ => lm_squared_error_sum preds targets / q_of_nat (length preds)
+  end.
+
+Definition token_distribution_loss (logits : Vector) (target : nat) : Scalar :=
+  lm_mean_squared_error
+    (normalized_output_distribution logits)
+    (one_hot_vector (length logits) target).
+
+Fixpoint sequence_token_losses (logits_seq : list Vector) (targets : list nat)
+  : list Scalar :=
+  match logits_seq, targets with
+  | logits :: logits_seq', target :: targets' =>
+      token_distribution_loss logits target
+      :: sequence_token_losses logits_seq' targets'
+  | _, _ => []
+  end.
+
+Definition sequence_distribution_loss (logits_seq : list Vector) (targets : list nat)
+  : Scalar :=
+  mean_scalars (sequence_token_losses logits_seq targets).
+
+Definition next_token_targets (tokens : list nat) : list nat :=
+  tl tokens.
+
+Definition model_sequence_loss (hp : HyperParams) (m : Model) (tokens : list nat)
+  : Scalar :=
+  sequence_distribution_loss (forward hp m tokens) (next_token_targets tokens).
+
+Definition Batch := list (list nat).
+
+Definition batch_forward (hp : HyperParams) (m : Model) (batch : Batch)
+  : list (list Vector) :=
+  map (forward hp m) batch.
+
+Definition batch_predictions (hp : HyperParams) (m : Model) (batch : Batch)
+  : list nat :=
+  map (predict_next hp m) batch.
+
+Definition batch_losses (hp : HyperParams) (m : Model) (batch : Batch)
+  : list Scalar :=
+  map (model_sequence_loss hp m) batch.
+
+Definition batch_mean_loss (hp : HyperParams) (m : Model) (batch : Batch)
+  : Scalar :=
+  mean_scalars (batch_losses hp m batch).
+
+Fixpoint greedy_generate (fuel : nat) (hp : HyperParams) (m : Model) (tokens : list nat)
+  : list nat :=
+  match fuel with
+  | O => tokens
+  | S fuel' =>
+      greedy_generate fuel' hp m (tokens ++ [predict_next hp m tokens])
+  end.
+
+Lemma sum_scalars_nonnegative :
+  forall xs,
+    Forall (fun x => 0 <= x) xs ->
+    0 <= sum_scalars xs.
+Proof.
+  intros xs Hxs.
+  induction Hxs as [|x xs Hx Hxs IH]; simpl; lra.
+Qed.
+
+Lemma one_hot_vector_row_ok :
+  forall width target,
+    row_ok width (one_hot_vector width target).
+Proof.
+  intros width target.
+  unfold one_hot_vector, row_ok.
+  assert (Haux :
+    forall remaining target idx,
+      length (one_hot_vector_aux remaining target idx) = remaining).
+  {
+    induction remaining as [|remaining IH]; intros target0 idx; simpl.
+    - reflexivity.
+    - now f_equal.
+  }
+  apply Haux.
+Qed.
+
+Lemma output_score_positive :
+  forall logit,
+    0 < output_score logit.
+Proof.
+  intros logit.
+  unfold output_score.
+  assert (0 <= logit * logit).
+  {
+    destruct (Qlt_le_dec logit 0) as [Hneg|Hnonneg].
+    - setoid_replace (logit * logit) with ((- logit) * (- logit)) by ring.
+      apply Qmult_le_0_compat; lra.
+    - apply Qmult_le_0_compat; lra.
+  }
+  lra.
+Qed.
+
+Lemma output_scores_row_ok :
+  forall logits,
+    row_ok (length logits) (output_scores logits).
+Proof.
+  intros logits.
+  unfold output_scores, row_ok.
+  now rewrite length_map.
+Qed.
+
+Lemma normalized_output_distribution_row_ok :
+  forall logits,
+    row_ok (length logits) (normalized_output_distribution logits).
+Proof.
+  intros logits.
+  unfold normalized_output_distribution.
+  destruct (Qeq_bool (sum_scalars (output_scores logits)) 0); simpl.
+  - apply row_ok_zero_vec.
+  - unfold row_ok, output_scores.
+    now rewrite !length_map.
+Qed.
+
+Lemma lm_scalar_squared_loss_nonnegative :
+  forall prediction target,
+    0 <= lm_scalar_squared_loss prediction target.
+Proof.
+  intros prediction target.
+  unfold lm_scalar_squared_loss, lm_square.
+  assert (0 <= (prediction - target) * (prediction - target)).
+  {
+    destruct (Qlt_le_dec (prediction - target) 0) as [Hneg|Hnonneg].
+    - setoid_replace ((prediction - target) * (prediction - target))
+        with ((- (prediction - target)) * (- (prediction - target))) by ring.
+      apply Qmult_le_0_compat; lra.
+    - apply Qmult_le_0_compat; lra.
+  }
+  assumption.
+Qed.
+
+Lemma lm_squared_error_sum_nonnegative :
+  forall preds targets,
+    0 <= lm_squared_error_sum preds targets.
+Proof.
+  induction preds as [|pred preds IH]; intros targets; simpl.
+  - lra.
+  - destruct targets as [|target targets']; simpl.
+    + lra.
+    + pose proof (lm_scalar_squared_loss_nonnegative pred target) as Hloss.
+      pose proof (IH targets') as Hrest.
+      lra.
+Qed.
+
+Lemma lm_mean_squared_error_nonnegative :
+  forall preds targets,
+    0 <= lm_mean_squared_error preds targets.
+Proof.
+  intros preds targets.
+  unfold lm_mean_squared_error.
+  destruct preds as [|pred preds']; simpl.
+  - lra.
+  - assert (0 <= lm_squared_error_sum (pred :: preds') targets).
+    { apply lm_squared_error_sum_nonnegative. }
+    assert (0 < q_of_nat (length (pred :: preds'))).
+    { apply q_of_nat_positive. }
+    apply Qmult_le_0_compat.
+    + exact H.
+    + apply Qlt_le_weak.
+      apply Qinv_lt_0_compat.
+      exact H0.
+Qed.
+
+Lemma token_distribution_loss_nonnegative :
+  forall logits target,
+    0 <= token_distribution_loss logits target.
+Proof.
+  intros logits target.
+  unfold token_distribution_loss.
+  apply lm_mean_squared_error_nonnegative.
+Qed.
+
+Lemma sequence_token_losses_length :
+  forall logits_seq targets,
+    length (sequence_token_losses logits_seq targets) =
+    Nat.min (length logits_seq) (length targets).
+Proof.
+  induction logits_seq as [|logits logits_seq IH]; intros targets; simpl.
+  - reflexivity.
+  - destruct targets as [|target targets']; simpl.
+    + reflexivity.
+    + now rewrite IH.
+Qed.
+
+Lemma batch_forward_length :
+  forall hp m batch,
+    length (batch_forward hp m batch) = length batch.
+Proof.
+  intros hp m batch.
+  unfold batch_forward.
+  now rewrite length_map.
+Qed.
+
+Lemma batch_predictions_length :
+  forall hp m batch,
+    length (batch_predictions hp m batch) = length batch.
+Proof.
+  intros hp m batch.
+  unfold batch_predictions.
+  now rewrite length_map.
+Qed.
+
+Lemma batch_losses_length :
+  forall hp m batch,
+    length (batch_losses hp m batch) = length batch.
+Proof.
+  intros hp m batch.
+  unfold batch_losses.
+  now rewrite length_map.
+Qed.
+
+Lemma greedy_generate_length :
+  forall fuel hp m tokens,
+    length (greedy_generate fuel hp m tokens) = (length tokens + fuel)%nat.
+Proof.
+  induction fuel as [|fuel IH]; intros hp m tokens; simpl.
+  - lia.
+  - rewrite IH.
+    rewrite length_app.
+    simpl.
+    lia.
+Qed.
+
 (** * Readout loss and reverse-mode differentiation. *)
 
 Definition square (x : Scalar) : Scalar :=
@@ -1136,6 +1438,18 @@ Definition demo1_logits : list Vector :=
 Definition demo1_prediction : nat :=
   predict_next demo1_hp demo1_model demo1_tokens.
 
+Definition demo1_generated_2 : list nat :=
+  greedy_generate 2 demo1_hp demo1_model demo1_tokens.
+
+Definition demo1_batch : Batch :=
+  [demo1_tokens; [0%nat; 1%nat; 2%nat]; [2%nat; 1%nat]].
+
+Definition demo1_sequence_loss : Scalar :=
+  model_sequence_loss demo1_hp demo1_model demo1_tokens.
+
+Definition demo1_batch_loss : Scalar :=
+  batch_mean_loss demo1_hp demo1_model demo1_batch.
+
 Lemma demo1_model_wf :
   model_wf demo1_hp demo1_model.
 Proof.
@@ -1177,6 +1491,23 @@ Proof.
   rewrite demo1_prediction_eq.
   simpl.
   lia.
+Qed.
+
+Lemma demo1_generated_2_length :
+  length demo1_generated_2 = 5%nat.
+Proof.
+  unfold demo1_generated_2.
+  rewrite greedy_generate_length.
+  simpl.
+  reflexivity.
+Qed.
+
+Lemma demo1_batch_forward_length :
+  length (batch_forward demo1_hp demo1_model demo1_batch) = 3%nat.
+Proof.
+  unfold demo1_batch.
+  rewrite batch_forward_length.
+  reflexivity.
 Qed.
 
 Definition demo2_hp : HyperParams :=
@@ -1364,6 +1695,9 @@ Definition demo1_logits_encoded := encode_matrix demo1_logits.
 Definition demo2_logits_encoded := encode_matrix demo2_logits.
 Definition demo3_logits_encoded := encode_matrix demo3_logits.
 
+Definition demo1_sequence_loss_encoded := encode_scalar demo1_sequence_loss.
+Definition demo1_batch_loss_encoded := encode_scalar demo1_batch_loss.
+
 Definition demo2_train_loss_encoded := encode_scalar demo2_train_loss.
 Definition demo2_train_grad_weights_encoded := encode_vector demo2_train_grad_weights.
 Definition demo2_train_grad_bias_encoded := encode_scalar demo2_train_grad_bias.
@@ -1390,8 +1724,11 @@ Set Extraction Output Directory ".".
 
 Extraction "microgpt_extracted.ml"
   demo1_tokens
+  demo1_generated_2
   demo1_logits_encoded
   demo1_prediction
+  demo1_sequence_loss_encoded
+  demo1_batch_loss_encoded
   demo2_tokens
   demo2_logits_encoded
   demo2_prediction

@@ -2255,6 +2255,339 @@ Definition normalize_model_grad (g : ModelGrad) : ModelGrad :=
   let scale := / (1 + model_grad_abs_sum g) in
   model_grad_scale scale g.
 
+Lemma row_ok_const_vec :
+  forall width x,
+    row_ok width (const_vec width x).
+Proof.
+  intros width x.
+  unfold row_ok, const_vec.
+  now rewrite repeat_length.
+Qed.
+
+Lemma zero_sequence_length :
+  forall steps width,
+    length (zero_sequence steps width) = steps.
+Proof.
+  intros steps width.
+  unfold zero_sequence.
+  now rewrite repeat_length.
+Qed.
+
+Lemma zero_sequence_row_ok :
+  forall steps width,
+    Forall (row_ok width) (zero_sequence steps width).
+Proof.
+  intros steps width.
+  unfold zero_sequence.
+  induction steps as [|steps IH]; simpl.
+  - constructor.
+  - constructor.
+    + apply row_ok_zero_vec.
+    + exact IH.
+Qed.
+
+Lemma vec_hadamard_length :
+  forall xs ys,
+    length xs = length ys ->
+    length (vec_hadamard xs ys) = length xs.
+Proof.
+  induction xs as [|x xs IH]; intros ys Hlen.
+  - destruct ys; simpl in *; auto; discriminate.
+  - destruct ys as [|y ys]; simpl in *; try discriminate.
+    simpl.
+    f_equal.
+    apply IH.
+    now inversion Hlen.
+Qed.
+
+Lemma vec_hadamard_row_ok :
+  forall width xs ys,
+    row_ok width xs ->
+    row_ok width ys ->
+    row_ok width (vec_hadamard xs ys).
+Proof.
+  intros width xs ys Hx Hy.
+  unfold row_ok in *.
+  rewrite vec_hadamard_length.
+  - exact Hx.
+  - now rewrite Hx, Hy.
+Qed.
+
+Lemma vec_div_safe_length :
+  forall xs ys,
+    length xs = length ys ->
+    length (vec_div_safe xs ys) = length xs.
+Proof.
+  intros xs ys Hlen.
+  unfold vec_div_safe.
+  now rewrite length_map, combine_length, Nat.min_id by exact Hlen.
+Qed.
+
+Lemma vec_div_safe_row_ok :
+  forall width xs ys,
+    row_ok width xs ->
+    row_ok width ys ->
+    row_ok width (vec_div_safe xs ys).
+Proof.
+  intros width xs ys Hx Hy.
+  unfold row_ok in *.
+  rewrite vec_div_safe_length.
+  - exact Hx.
+  - now rewrite Hx, Hy.
+Qed.
+
+Lemma vec_relu_mask_row_ok :
+  forall width xs,
+    row_ok width xs ->
+    row_ok width (vec_relu_mask xs).
+Proof.
+  intros width xs Hx.
+  unfold row_ok, vec_relu_mask in *.
+  now rewrite length_map, Hx.
+Qed.
+
+Lemma outer_product_ok :
+  forall rows cols row_scales input,
+    row_ok rows row_scales ->
+    row_ok cols input ->
+    matrix_ok rows cols (outer_product row_scales input).
+Proof.
+  intros rows cols row_scales input Hrows Hinput.
+  split.
+  - unfold outer_product, row_ok in *.
+    now rewrite length_map, Hrows.
+  - unfold outer_product.
+    induction row_scales as [|scale row_scales IH]; simpl.
+    + constructor.
+    + constructor.
+      * unfold row_ok in *.
+        now rewrite vec_scale_length, Hinput.
+      * exact IH.
+Qed.
+
+Lemma mat_T_vec_mul_row_ok :
+  forall rows width m grad,
+    matrix_ok rows width m ->
+    row_ok rows grad ->
+    row_ok width (mat_T_vec_mul width m grad).
+Proof.
+  intros rows width m grad Hm Hgrad.
+  revert m Hm.
+  induction grad as [|g grad IH]; intros m Hm.
+  - destruct m as [|row rows']; simpl in *.
+    + apply row_ok_zero_vec.
+    + destruct Hm as [Hlen _].
+      simpl in Hgrad.
+      discriminate.
+  - destruct m as [|row rows']; simpl in *.
+    + destruct Hm as [Hlen _].
+      discriminate.
+    + destruct Hm as [Hlen Hrows].
+      inversion Hrows as [|? ? Hrow Hrows']; subst.
+      simpl in Hgrad.
+      inversion Hgrad as [Hgrad'].
+      apply vec_add_row_ok.
+      * unfold row_ok in *.
+        now rewrite vec_scale_length, Hrow.
+      * apply IH.
+        split.
+        -- now inversion Hlen.
+        -- exact Hrows'.
+Qed.
+
+Lemma matrix_square_ok :
+  forall rows cols m,
+    matrix_ok rows cols m ->
+    matrix_ok rows cols (matrix_square m).
+Proof.
+  intros rows cols m [Hlen Hrows].
+  split.
+  - unfold matrix_square.
+    now rewrite length_map, Hlen.
+  - unfold matrix_square.
+    induction Hrows as [|row rows' Hrow Hrows' IH]; simpl.
+    + constructor.
+    + constructor.
+      * unfold vec_square.
+        apply vec_hadamard_row_ok; assumption.
+      * exact IH.
+Qed.
+
+Lemma matrix_add_eps_ok :
+  forall rows cols eps m,
+    matrix_ok rows cols m ->
+    matrix_ok rows cols (matrix_add_eps eps m).
+Proof.
+  intros rows cols eps m [Hlen Hrows].
+  split.
+  - unfold matrix_add_eps.
+    now rewrite length_map, Hlen.
+  - unfold matrix_add_eps.
+    induction Hrows as [|row rows' Hrow Hrows' IH]; simpl.
+    + constructor.
+    + constructor.
+      * unfold row_ok in *.
+        now rewrite length_map, Hrow.
+      * exact IH.
+Qed.
+
+Lemma matrix_div_safe_ok :
+  forall rows cols a b,
+    matrix_ok rows cols a ->
+    matrix_ok rows cols b ->
+    matrix_ok rows cols (matrix_div_safe a b).
+Proof.
+  intros rows cols a b [Ha_len Ha_rows] [Hb_len Hb_rows].
+  split.
+  - revert b Hb_len.
+    induction a as [|row_a a' IH]; intros b Hb_len.
+    + destruct b; simpl in *; auto; discriminate.
+    + destruct b as [|row_b b']; simpl in *; try discriminate.
+      simpl.
+      f_equal.
+      apply IH.
+      now inversion Ha_len; inversion Hb_len.
+  - revert b Hb_rows Hb_len.
+    induction Ha_rows as [|row_a a' Hrow_a Ha_rows' IH]; intros b Hb_rows Hb_len.
+    + destruct b; simpl in *; constructor.
+    + destruct b as [|row_b b']; simpl in *; try discriminate.
+      inversion Hb_rows as [|? ? Hrow_b Hb_rows']; subst.
+      constructor.
+      * apply vec_div_safe_row_ok; assumption.
+      * apply IH.
+        -- exact Hb_rows'.
+        -- now inversion Hb_len.
+Qed.
+
+Lemma matrix_sqrt_floor_ok :
+  forall rows cols m,
+    matrix_ok rows cols m ->
+    matrix_ok rows cols (matrix_sqrt_floor m).
+Proof.
+  intros rows cols m [Hlen Hrows].
+  split.
+  - unfold matrix_sqrt_floor.
+    now rewrite length_map, Hlen.
+  - unfold matrix_sqrt_floor.
+    induction Hrows as [|row rows' Hrow Hrows' IH]; simpl.
+    + constructor.
+    + constructor.
+      * unfold row_ok in *.
+        now rewrite length_map, Hrow.
+      * exact IH.
+Qed.
+
+Lemma model_grad_wf_zero :
+  forall hp,
+    model_grad_wf hp (zero_model_grad hp).
+Proof.
+  intros hp.
+  unfold model_grad_wf, zero_model_grad.
+  repeat split; apply zero_matrix_ok.
+Qed.
+
+Lemma model_grad_wf_add :
+  forall hp a b,
+    model_grad_wf hp a ->
+    model_grad_wf hp b ->
+    model_grad_wf hp (model_grad_add a b).
+Proof.
+  intros hp a b Ha Hb.
+  unfold model_grad_wf in *.
+  destruct Ha as [Ha_emb [Ha_q [Ha_k [Ha_v [Ha_o [Ha_1 [Ha_2 Ha_out]]]]]]].
+  destruct Hb as [Hb_emb [Hb_q [Hb_k [Hb_v [Hb_o [Hb_1 [Hb_2 Hb_out]]]]]]].
+  unfold model_grad_add.
+  repeat split; apply matrix_add_ok; assumption.
+Qed.
+
+Lemma model_grad_wf_scale :
+  forall hp k g,
+    model_grad_wf hp g ->
+    model_grad_wf hp (model_grad_scale k g).
+Proof.
+  intros hp k g Hg.
+  unfold model_grad_wf in *.
+  destruct Hg as [Hemb [Hq [Hk [Hv [Ho [H1 [H2 Hout]]]]]]].
+  unfold model_grad_scale.
+  repeat split; apply matrix_scale_ok; assumption.
+Qed.
+
+Lemma model_grad_wf_square :
+  forall hp g,
+    model_grad_wf hp g ->
+    model_grad_wf hp (model_grad_square g).
+Proof.
+  intros hp g Hg.
+  unfold model_grad_wf in *.
+  destruct Hg as [Hemb [Hq [Hk [Hv [Ho [H1 [H2 Hout]]]]]]].
+  unfold model_grad_square.
+  repeat split; apply matrix_square_ok; assumption.
+Qed.
+
+Lemma model_grad_wf_div_safe :
+  forall hp a b,
+    model_grad_wf hp a ->
+    model_grad_wf hp b ->
+    model_grad_wf hp (model_grad_div_safe a b).
+Proof.
+  intros hp a b Ha Hb.
+  unfold model_grad_wf in *.
+  destruct Ha as [Ha_emb [Ha_q [Ha_k [Ha_v [Ha_o [Ha_1 [Ha_2 Ha_out]]]]]]].
+  destruct Hb as [Hb_emb [Hb_q [Hb_k [Hb_v [Hb_o [Hb_1 [Hb_2 Hb_out]]]]]]].
+  unfold model_grad_div_safe.
+  repeat split; apply matrix_div_safe_ok; assumption.
+Qed.
+
+Lemma model_grad_wf_sqrt_floor :
+  forall hp g,
+    model_grad_wf hp g ->
+    model_grad_wf hp (model_grad_sqrt_floor g).
+Proof.
+  intros hp g Hg.
+  unfold model_grad_wf in *.
+  destruct Hg as [Hemb [Hq [Hk [Hv [Ho [H1 [H2 Hout]]]]]]].
+  unfold model_grad_sqrt_floor.
+  repeat split; apply matrix_sqrt_floor_ok; assumption.
+Qed.
+
+Lemma model_grad_wf_add_eps :
+  forall hp eps g,
+    model_grad_wf hp g ->
+    model_grad_wf hp (model_grad_add_eps eps g).
+Proof.
+  intros hp eps g Hg.
+  unfold model_grad_wf in *.
+  destruct Hg as [Hemb [Hq [Hk [Hv [Ho [H1 [H2 Hout]]]]]]].
+  unfold model_grad_add_eps.
+  repeat split; apply matrix_add_eps_ok; assumption.
+Qed.
+
+Lemma normalize_model_grad_wf :
+  forall hp g,
+    model_grad_wf hp g ->
+    model_grad_wf hp (normalize_model_grad g).
+Proof.
+  intros hp g Hg.
+  unfold normalize_model_grad.
+  apply model_grad_wf_scale.
+  exact Hg.
+Qed.
+
+Lemma model_apply_grad_preserves_wf :
+  forall hp m g,
+    model_wf hp m ->
+    model_grad_wf hp g ->
+    model_wf hp (model_apply_grad m g).
+Proof.
+  intros hp m g Hm Hg.
+  unfold model_wf in Hm.
+  unfold model_grad_wf in Hg.
+  destruct Hm as [Hm_emb [Hm_q [Hm_k [Hm_v [Hm_o [Hm_1 [Hm_2 Hm_out]]]]]]].
+  destruct Hg as [Hg_emb [Hg_q [Hg_k [Hg_v [Hg_o [Hg_1 [Hg_2 Hg_out]]]]]]].
+  unfold model_apply_grad.
+  repeat split; apply matrix_add_ok; assumption.
+Qed.
+
 Fixpoint scalar_pow (x : Scalar) (n : nat) : Scalar :=
   match n with
   | O => 1
@@ -2524,6 +2857,25 @@ Definition zero_adam_state (hp : HyperParams) (m : Model) : AdamState :=
     adam_moment_2 := zero_model_grad hp;
     adam_steps := 0
   |}.
+
+Definition adam_state_wf (hp : HyperParams) (s : AdamState) : Prop :=
+  model_wf hp (adam_model s) /\
+  model_grad_wf hp (adam_moment_1 s) /\
+  model_grad_wf hp (adam_moment_2 s).
+
+Lemma zero_adam_state_wf :
+  forall hp m,
+    model_wf hp m ->
+    adam_state_wf hp (zero_adam_state hp m).
+Proof.
+  intros hp m Hm.
+  unfold adam_state_wf, zero_adam_state.
+  simpl.
+  repeat split.
+  - exact Hm.
+  - apply model_grad_wf_zero.
+  - apply model_grad_wf_zero.
+Qed.
 
 Definition adam_bias_correction (beta : Scalar) (steps : nat) : Scalar :=
   1 - scalar_pow beta (S steps).

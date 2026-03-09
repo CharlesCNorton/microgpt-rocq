@@ -2320,7 +2320,9 @@ Lemma vec_div_safe_length :
 Proof.
   intros xs ys Hlen.
   unfold vec_div_safe.
-  now rewrite length_map, combine_length, Nat.min_id by exact Hlen.
+  rewrite length_map, combine_length.
+  rewrite Hlen.
+  apply Nat.min_id.
 Qed.
 
 Lemma vec_div_safe_row_ok :

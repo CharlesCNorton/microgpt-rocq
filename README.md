@@ -28,6 +28,8 @@ Implemented pieces:
 - a linear readout head over the final hidden state
 - squared loss for the readout head
 - a reverse-mode backward pass for the readout head
+- a frozen-body output-head training loop in the OCaml executable
+- deterministic and sampled generation paths in the OCaml executable
 
 Scalars are exact rationals (`Q`), not integers. Attention uses the positive kernel
 
@@ -68,8 +70,17 @@ The executable also prints:
 - the encoded squared loss for the `demo2` readout example
 - the encoded reverse-mode gradients for the readout weights
 - the encoded reverse-mode gradient for the readout bias
+- a runtime training demo over a tiny token corpus
+- a before/after loss trace for a cold output head trained against extracted hidden states
+- before/after greedy continuations for the trained output head
+- before/after sampled continuations for the trained output head
 
 Rational outputs are printed as numerator/denominator pairs.
+
+The runtime trainer in `main.ml` intentionally keeps the transformer body fixed.
+It uses extracted hidden states from the Rocq model, optimizes only the output
+projection in the OCaml driver, and then converts the trained head back into
+small rational weights for extracted prediction and generation.
 
 ## Build
 
@@ -98,8 +109,9 @@ GitHub Actions runs the same pipeline on every push and pull request:
 
 Natural follow-on work includes:
 
-- replacing the current rational kernel with a closer analogue of softmax attention
 - extending reverse-mode differentiation from the readout head to the transformer core
-- introducing a more realistic floating-point or fixed-point numeric model
+- replacing the current squared-loss output-head trainer with a proved end-to-end token-training objective
+- introducing a more realistic floating-point or fixed-point numeric model inside the theorem-bearing core
 - proving stronger equivalences between optimized and reference implementations
+- moving more of the executable-side training workflow into the proved Rocq development
 - targeting additional extracted runtimes, including Crane

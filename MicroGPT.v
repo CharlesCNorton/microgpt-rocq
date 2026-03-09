@@ -1858,6 +1858,866 @@ Proof.
     exact Hwf.
 Qed.
 
+(** * Whole-model backpropagation and optimizer state. *)
+
+Definition const_vec (width : nat) (x : Scalar) : Vector :=
+  repeat x width.
+
+Definition zero_sequence (steps width : nat) : list Vector :=
+  repeat (zero_vec width) steps.
+
+Fixpoint vec_hadamard (xs ys : Vector) : Vector :=
+  match xs, ys with
+  | x :: xs', y :: ys' => (x * y) :: vec_hadamard xs' ys'
+  | _, _ => []
+  end.
+
+Definition vec_square (xs : Vector) : Vector :=
+  vec_hadamard xs xs.
+
+Definition vec_div_safe (xs ys : Vector) : Vector :=
+  map
+    (fun xy =>
+       let '(x, y) := xy in
+       if Qeq_bool y 0 then 0 else x / y)
+    (combine xs ys).
+
+Definition vec_relu_mask (xs : Vector) : Vector :=
+  map (fun x => if Qle_bool x 0 then 0 else 1) xs.
+
+Definition relu_backprop (preact grad : Vector) : Vector :=
+  vec_hadamard (vec_relu_mask preact) grad.
+
+Definition outer_product (rows : Vector) (input : Vector) : Matrix :=
+  map (fun row_scale => vec_scale row_scale input) rows.
+
+Fixpoint mat_T_vec_mul (width : nat) (m : Matrix) (grad : Vector) : Vector :=
+  match m, grad with
+  | row :: rows', g :: grad' =>
+      vec_add (vec_scale g row) (mat_T_vec_mul width rows' grad')
+  | _, _ => zero_vec width
+  end.
+
+Fixpoint matrix_div_safe (a b : Matrix) : Matrix :=
+  match a, b with
+  | row_a :: a', row_b :: b' =>
+      vec_div_safe row_a row_b :: matrix_div_safe a' b'
+  | _, _ => []
+  end.
+
+Definition matrix_square (m : Matrix) : Matrix :=
+  map vec_square m.
+
+Definition matrix_add_eps (eps : Scalar) (m : Matrix) : Matrix :=
+  map (fun row => map (fun x => x + eps) row) m.
+
+Definition scalar_abs (x : Scalar) : Scalar :=
+  if Qle_bool 0 x then x else - x.
+
+Definition vec_abs_sum (xs : Vector) : Scalar :=
+  sum_scalars (map scalar_abs xs).
+
+Definition matrix_abs_sum (m : Matrix) : Scalar :=
+  sum_scalars (map vec_abs_sum m).
+
+Definition scalar_sqrt_floor (x : Scalar) : Scalar :=
+  if Qle_bool x 0
+  then 0
+  else (Z.sqrt (Qnum x)) # (Pos.sqrt (Qden x)).
+
+Definition matrix_sqrt_floor (m : Matrix) : Matrix :=
+  map (map scalar_sqrt_floor) m.
+
+Fixpoint seq_of_matrix_backprops
+  (width : nat)
+  (w : Matrix)
+  (inputs grads : list Vector)
+  : Matrix * list Vector :=
+  match inputs, grads with
+  | input :: inputs', grad :: grads' =>
+      let '(weight_grad_rest, input_grads_rest) :=
+        seq_of_matrix_backprops width w inputs' grads' in
+      (seq_add (outer_product grad input) weight_grad_rest,
+       mat_T_vec_mul width w grad :: input_grads_rest)
+  | _, _ => (zero_matrix (length w) width, [])
+  end.
+
+Record FeedForwardBackprop := {
+  ff_back_w1 : Matrix;
+  ff_back_w2 : Matrix;
+  ff_back_input : Vector
+}.
+
+Definition backprop_feed_forward
+  (d_model d_hidden : nat)
+  (w1 w2 : Matrix)
+  (input grad_out : Vector)
+  : FeedForwardBackprop :=
+  let pre1 := mat_vec_mul w1 input in
+  let hidden := map relu pre1 in
+  let grad_w2 := outer_product grad_out hidden in
+  let grad_hidden := mat_T_vec_mul d_hidden w2 grad_out in
+  let grad_pre1 := relu_backprop pre1 grad_hidden in
+  let grad_w1 := outer_product grad_pre1 input in
+  let grad_input := mat_T_vec_mul d_model w1 grad_pre1 in
+  {|
+    ff_back_w1 := grad_w1;
+    ff_back_w2 := grad_w2;
+    ff_back_input := grad_input
+  |}.
+
+Fixpoint backprop_feed_forward_sequence
+  (d_model d_hidden : nat)
+  (w1 w2 : Matrix)
+  (inputs grads_out : list Vector)
+  : Matrix * Matrix * list Vector :=
+  match inputs, grads_out with
+  | input :: inputs', grad_out :: grads_out' =>
+      let local := backprop_feed_forward d_model d_hidden w1 w2 input grad_out in
+      let '(w1_rest, w2_rest, input_rest) :=
+        backprop_feed_forward_sequence d_model d_hidden w1 w2 inputs' grads_out' in
+      (seq_add (ff_back_w1 local) w1_rest,
+       seq_add (ff_back_w2 local) w2_rest,
+       ff_back_input local :: input_rest)
+  | _, _ =>
+      (zero_matrix d_hidden d_model,
+       zero_matrix d_model d_hidden,
+       [])
+  end.
+
+Record AttendBackprop := {
+  attend_back_query : Vector;
+  attend_back_keys : list Vector;
+  attend_back_values : list Vector
+}.
+
+Fixpoint backprop_attend_aux
+  (width : nat)
+  (query : Vector)
+  (keys values : list Vector)
+  (output grad_out : Vector)
+  (denom : Scalar)
+  : AttendBackprop :=
+  match keys, values with
+  | key :: keys', value :: values' =>
+      let local_score := kernel_score query key in
+      let local_signal := dot grad_out (vec_sub value output) / denom in
+      let local_dot_grad := 2 * dot query key * local_signal in
+      let local_query := vec_scale local_dot_grad key in
+      let local_key := vec_scale local_dot_grad query in
+      let local_value := vec_scale (local_score / denom) grad_out in
+      let rest := backprop_attend_aux width query keys' values' output grad_out denom in
+      {|
+        attend_back_query := vec_add local_query (attend_back_query rest);
+        attend_back_keys := local_key :: attend_back_keys rest;
+        attend_back_values := local_value :: attend_back_values rest
+      |}
+  | _, _ =>
+      {|
+        attend_back_query := zero_vec width;
+        attend_back_keys := [];
+        attend_back_values := []
+      |}
+  end.
+
+Definition backprop_attend
+  (width : nat)
+  (query : Vector)
+  (keys values : list Vector)
+  (grad_out : Vector)
+  : AttendBackprop :=
+  let denom := attend_denominator query keys in
+  if Qeq_bool denom 0
+  then
+    {|
+      attend_back_query := zero_vec width;
+      attend_back_keys := zero_sequence (length keys) width;
+      attend_back_values := zero_sequence (length values) width
+    |}
+  else
+    backprop_attend_aux width query keys values (attend width query keys values) grad_out denom.
+
+Fixpoint backprop_causal_attention_aux
+  (width : nat)
+  (seen_keys seen_values : list Vector)
+  (acc_key_grads acc_value_grads : list Vector)
+  (queries keys values grad_outputs : list Vector)
+  : list Vector * list Vector * list Vector :=
+  match queries, keys, values, grad_outputs with
+  | query :: queries', key :: keys', value :: values', grad_out :: grad_outputs' =>
+      let seen_keys' := seen_keys ++ [key] in
+      let seen_values' := seen_values ++ [value] in
+      let local := backprop_attend width query seen_keys' seen_values' grad_out in
+      let acc_key_grads' :=
+        seq_add (attend_back_keys local) (acc_key_grads ++ [zero_vec width]) in
+      let acc_value_grads' :=
+        seq_add (attend_back_values local) (acc_value_grads ++ [zero_vec width]) in
+      let '(query_rest, key_rest, value_rest) :=
+        backprop_causal_attention_aux
+          width
+          seen_keys'
+          seen_values'
+          acc_key_grads'
+          acc_value_grads'
+          queries'
+          keys'
+          values'
+          grad_outputs' in
+      (attend_back_query local :: query_rest, key_rest, value_rest)
+  | _, _, _, _ => ([], acc_key_grads, acc_value_grads)
+  end.
+
+Definition backprop_causal_attention
+  (width : nat)
+  (queries keys values grad_outputs : list Vector)
+  : list Vector * list Vector * list Vector :=
+  backprop_causal_attention_aux
+    width
+    []
+    []
+    []
+    []
+    queries
+    keys
+    values
+    grad_outputs.
+
+Fixpoint embedding_grad_for_token
+  (rows cols tok : nat)
+  (grad : Vector)
+  : Matrix :=
+  match rows with
+  | O => []
+  | S rows' =>
+      match tok with
+      | O => grad :: zero_matrix rows' cols
+      | S tok' => zero_vec cols :: embedding_grad_for_token rows' cols tok' grad
+      end
+  end.
+
+Fixpoint embedding_grads_from_inputs
+  (rows cols : nat)
+  (tokens : list nat)
+  (grads : list Vector)
+  : Matrix :=
+  match tokens, grads with
+  | tok :: tokens', grad :: grads' =>
+      seq_add
+        (embedding_grad_for_token rows cols tok grad)
+        (embedding_grads_from_inputs rows cols tokens' grads')
+  | _, _ => zero_matrix rows cols
+  end.
+
+Record ModelGrad := {
+  grad_model_embeddings : Matrix;
+  grad_model_w_q : Matrix;
+  grad_model_w_k : Matrix;
+  grad_model_w_v : Matrix;
+  grad_model_w_o : Matrix;
+  grad_model_w_1 : Matrix;
+  grad_model_w_2 : Matrix;
+  grad_model_out_proj : Matrix
+}.
+
+Definition model_grad_wf (hp : HyperParams) (g : ModelGrad) : Prop :=
+  matrix_ok (hp_vocab hp) (hp_d_model hp) (grad_model_embeddings g) /\
+  matrix_ok (hp_d_model hp) (hp_d_model hp) (grad_model_w_q g) /\
+  matrix_ok (hp_d_model hp) (hp_d_model hp) (grad_model_w_k g) /\
+  matrix_ok (hp_d_model hp) (hp_d_model hp) (grad_model_w_v g) /\
+  matrix_ok (hp_d_model hp) (hp_d_model hp) (grad_model_w_o g) /\
+  matrix_ok (hp_d_hidden hp) (hp_d_model hp) (grad_model_w_1 g) /\
+  matrix_ok (hp_d_model hp) (hp_d_hidden hp) (grad_model_w_2 g) /\
+  matrix_ok (hp_vocab hp) (hp_d_model hp) (grad_model_out_proj g).
+
+Definition zero_model_grad (hp : HyperParams) : ModelGrad :=
+  {|
+    grad_model_embeddings := zero_matrix (hp_vocab hp) (hp_d_model hp);
+    grad_model_w_q := zero_matrix (hp_d_model hp) (hp_d_model hp);
+    grad_model_w_k := zero_matrix (hp_d_model hp) (hp_d_model hp);
+    grad_model_w_v := zero_matrix (hp_d_model hp) (hp_d_model hp);
+    grad_model_w_o := zero_matrix (hp_d_model hp) (hp_d_model hp);
+    grad_model_w_1 := zero_matrix (hp_d_hidden hp) (hp_d_model hp);
+    grad_model_w_2 := zero_matrix (hp_d_model hp) (hp_d_hidden hp);
+    grad_model_out_proj := zero_matrix (hp_vocab hp) (hp_d_model hp)
+  |}.
+
+Definition model_grad_add (a b : ModelGrad) : ModelGrad :=
+  {|
+    grad_model_embeddings :=
+      seq_add (grad_model_embeddings a) (grad_model_embeddings b);
+    grad_model_w_q :=
+      seq_add (grad_model_w_q a) (grad_model_w_q b);
+    grad_model_w_k :=
+      seq_add (grad_model_w_k a) (grad_model_w_k b);
+    grad_model_w_v :=
+      seq_add (grad_model_w_v a) (grad_model_w_v b);
+    grad_model_w_o :=
+      seq_add (grad_model_w_o a) (grad_model_w_o b);
+    grad_model_w_1 :=
+      seq_add (grad_model_w_1 a) (grad_model_w_1 b);
+    grad_model_w_2 :=
+      seq_add (grad_model_w_2 a) (grad_model_w_2 b);
+    grad_model_out_proj :=
+      seq_add (grad_model_out_proj a) (grad_model_out_proj b)
+  |}.
+
+Definition model_grad_scale (k : Scalar) (g : ModelGrad) : ModelGrad :=
+  {|
+    grad_model_embeddings := matrix_scale k (grad_model_embeddings g);
+    grad_model_w_q := matrix_scale k (grad_model_w_q g);
+    grad_model_w_k := matrix_scale k (grad_model_w_k g);
+    grad_model_w_v := matrix_scale k (grad_model_w_v g);
+    grad_model_w_o := matrix_scale k (grad_model_w_o g);
+    grad_model_w_1 := matrix_scale k (grad_model_w_1 g);
+    grad_model_w_2 := matrix_scale k (grad_model_w_2 g);
+    grad_model_out_proj := matrix_scale k (grad_model_out_proj g)
+  |}.
+
+Definition model_grad_square (g : ModelGrad) : ModelGrad :=
+  {|
+    grad_model_embeddings := matrix_square (grad_model_embeddings g);
+    grad_model_w_q := matrix_square (grad_model_w_q g);
+    grad_model_w_k := matrix_square (grad_model_w_k g);
+    grad_model_w_v := matrix_square (grad_model_w_v g);
+    grad_model_w_o := matrix_square (grad_model_w_o g);
+    grad_model_w_1 := matrix_square (grad_model_w_1 g);
+    grad_model_w_2 := matrix_square (grad_model_w_2 g);
+    grad_model_out_proj := matrix_square (grad_model_out_proj g)
+  |}.
+
+Definition model_grad_div_safe (a b : ModelGrad) : ModelGrad :=
+  {|
+    grad_model_embeddings :=
+      matrix_div_safe (grad_model_embeddings a) (grad_model_embeddings b);
+    grad_model_w_q :=
+      matrix_div_safe (grad_model_w_q a) (grad_model_w_q b);
+    grad_model_w_k :=
+      matrix_div_safe (grad_model_w_k a) (grad_model_w_k b);
+    grad_model_w_v :=
+      matrix_div_safe (grad_model_w_v a) (grad_model_w_v b);
+    grad_model_w_o :=
+      matrix_div_safe (grad_model_w_o a) (grad_model_w_o b);
+    grad_model_w_1 :=
+      matrix_div_safe (grad_model_w_1 a) (grad_model_w_1 b);
+    grad_model_w_2 :=
+      matrix_div_safe (grad_model_w_2 a) (grad_model_w_2 b);
+    grad_model_out_proj :=
+      matrix_div_safe (grad_model_out_proj a) (grad_model_out_proj b)
+  |}.
+
+Definition model_grad_sqrt_floor (g : ModelGrad) : ModelGrad :=
+  {|
+    grad_model_embeddings := matrix_sqrt_floor (grad_model_embeddings g);
+    grad_model_w_q := matrix_sqrt_floor (grad_model_w_q g);
+    grad_model_w_k := matrix_sqrt_floor (grad_model_w_k g);
+    grad_model_w_v := matrix_sqrt_floor (grad_model_w_v g);
+    grad_model_w_o := matrix_sqrt_floor (grad_model_w_o g);
+    grad_model_w_1 := matrix_sqrt_floor (grad_model_w_1 g);
+    grad_model_w_2 := matrix_sqrt_floor (grad_model_w_2 g);
+    grad_model_out_proj := matrix_sqrt_floor (grad_model_out_proj g)
+  |}.
+
+Definition model_grad_add_eps (eps : Scalar) (g : ModelGrad) : ModelGrad :=
+  {|
+    grad_model_embeddings := matrix_add_eps eps (grad_model_embeddings g);
+    grad_model_w_q := matrix_add_eps eps (grad_model_w_q g);
+    grad_model_w_k := matrix_add_eps eps (grad_model_w_k g);
+    grad_model_w_v := matrix_add_eps eps (grad_model_w_v g);
+    grad_model_w_o := matrix_add_eps eps (grad_model_w_o g);
+    grad_model_w_1 := matrix_add_eps eps (grad_model_w_1 g);
+    grad_model_w_2 := matrix_add_eps eps (grad_model_w_2 g);
+    grad_model_out_proj := matrix_add_eps eps (grad_model_out_proj g)
+  |}.
+
+Definition model_apply_grad (m : Model) (g : ModelGrad) : Model :=
+  {|
+    model_embeddings := seq_add (model_embeddings m) (grad_model_embeddings g);
+    model_w_q := seq_add (model_w_q m) (grad_model_w_q g);
+    model_w_k := seq_add (model_w_k m) (grad_model_w_k g);
+    model_w_v := seq_add (model_w_v m) (grad_model_w_v g);
+    model_w_o := seq_add (model_w_o m) (grad_model_w_o g);
+    model_w_1 := seq_add (model_w_1 m) (grad_model_w_1 g);
+    model_w_2 := seq_add (model_w_2 m) (grad_model_w_2 g);
+    model_out_proj := seq_add (model_out_proj m) (grad_model_out_proj g)
+  |}.
+
+Definition model_grad_abs_sum (g : ModelGrad) : Scalar :=
+  matrix_abs_sum (grad_model_embeddings g) +
+  matrix_abs_sum (grad_model_w_q g) +
+  matrix_abs_sum (grad_model_w_k g) +
+  matrix_abs_sum (grad_model_w_v g) +
+  matrix_abs_sum (grad_model_w_o g) +
+  matrix_abs_sum (grad_model_w_1 g) +
+  matrix_abs_sum (grad_model_w_2 g) +
+  matrix_abs_sum (grad_model_out_proj g).
+
+Definition normalize_model_grad (g : ModelGrad) : ModelGrad :=
+  let scale := / (1 + model_grad_abs_sum g) in
+  model_grad_scale scale g.
+
+Fixpoint scalar_pow (x : Scalar) (n : nat) : Scalar :=
+  match n with
+  | O => 1
+  | S n' => x * scalar_pow x n'
+  end.
+
+Record TransformerTape := {
+  tape_tokens_full : list nat;
+  tape_embed : list Vector;
+  tape_queries_full : list Vector;
+  tape_keys_full : list Vector;
+  tape_values_full : list Vector;
+  tape_attended_full : list Vector;
+  tape_mixed_full : list Vector;
+  tape_resid1_full : list Vector;
+  tape_ff_pre1_full : list Vector;
+  tape_ff_hidden_full : list Vector;
+  tape_ff_out_full : list Vector;
+  tape_hidden1_full : list Vector;
+  tape_logits_full : list Vector
+}.
+
+Definition build_transformer_tape
+  (hp : HyperParams)
+  (m : Model)
+  (tokens : list nat)
+  : TransformerTape :=
+  let embed := embed_tokens hp m tokens in
+  let queries := project_all (model_w_q m) embed in
+  let keys := project_all (model_w_k m) embed in
+  let values := project_all (model_w_v m) embed in
+  let attended := causal_attention (hp_d_model hp) queries keys values in
+  let mixed := project_all (model_w_o m) attended in
+  let resid1 := seq_add embed mixed in
+  let ff_pre1 := map (mat_vec_mul (model_w_1 m)) resid1 in
+  let ff_hidden := map (map relu) ff_pre1 in
+  let ff_out := map (mat_vec_mul (model_w_2 m)) ff_hidden in
+  let hidden1 := seq_add resid1 ff_out in
+  let logits := map (logits_for_hidden m) hidden1 in
+  {|
+    tape_tokens_full := tokens;
+    tape_embed := embed;
+    tape_queries_full := queries;
+    tape_keys_full := keys;
+    tape_values_full := values;
+    tape_attended_full := attended;
+    tape_mixed_full := mixed;
+    tape_resid1_full := resid1;
+    tape_ff_pre1_full := ff_pre1;
+    tape_ff_hidden_full := ff_hidden;
+    tape_ff_out_full := ff_out;
+    tape_hidden1_full := hidden1;
+    tape_logits_full := logits
+  |}.
+
+Definition token_distribution_loss_grad
+  (logits : Vector)
+  (target : nat)
+  : Vector :=
+  let probs := normalized_output_distribution logits in
+  let targets := one_hot_vector (length logits) target in
+  match logits with
+  | [] => []
+  | _ =>
+      let gp :=
+        vec_scale (2 / q_of_nat (length logits)) (vec_sub probs targets) in
+      let scores := output_scores logits in
+      let denom := sum_scalars scores in
+      if Qeq_bool denom 0
+      then zero_vec (length logits)
+      else
+        let centered := vec_sub gp (const_vec (length gp) (dot gp probs)) in
+        vec_hadamard (map (fun x => 2 * x) logits)
+          (vec_scale (/ denom) centered)
+  end.
+
+Fixpoint sequence_logits_loss_grad_raw
+  (logits_seq : list Vector)
+  (targets : list nat)
+  : list Vector :=
+  match logits_seq, targets with
+  | logits :: logits_seq', target :: targets' =>
+      token_distribution_loss_grad logits target
+      :: sequence_logits_loss_grad_raw logits_seq' targets'
+  | _, _ => []
+  end.
+
+Definition sequence_logits_loss_grad
+  (logits_seq : list Vector)
+  (targets : list nat)
+  : list Vector :=
+  match targets with
+  | [] => []
+  | _ =>
+      map
+        (vec_scale (/ q_of_nat (length targets)))
+        (sequence_logits_loss_grad_raw logits_seq targets)
+  end.
+
+Definition sequence_loss_grad_for_tokens
+  (hp : HyperParams)
+  (m : Model)
+  (tokens : list nat)
+  : list Vector :=
+  let tape := build_transformer_tape hp m tokens in
+  let targets := next_token_targets tokens in
+  sequence_logits_loss_grad
+    (firstn (length targets) (tape_logits_full tape))
+    targets.
+
+Definition full_model_grad_from_tape
+  (hp : HyperParams)
+  (m : Model)
+  (tape : TransformerTape)
+  : ModelGrad :=
+  let targets := next_token_targets (tape_tokens_full tape) in
+  let grad_logits :=
+    sequence_logits_loss_grad
+      (firstn (length targets) (tape_logits_full tape))
+      targets in
+  let '(grad_out_proj, grad_hidden1_prefix) :=
+    seq_of_matrix_backprops
+      (hp_d_model hp)
+      (model_out_proj m)
+      (firstn (length grad_logits) (tape_hidden1_full tape))
+      grad_logits in
+  let grad_ff_out := grad_hidden1_prefix in
+  let grad_resid1_from_top := grad_hidden1_prefix in
+  let '(grad_w1, grad_w2, grad_resid1_from_ff) :=
+    backprop_feed_forward_sequence
+      (hp_d_model hp)
+      (hp_d_hidden hp)
+      (model_w_1 m)
+      (model_w_2 m)
+      (firstn (length grad_ff_out) (tape_resid1_full tape))
+      grad_ff_out in
+  let grad_resid1 := seq_add grad_resid1_from_top grad_resid1_from_ff in
+  let grad_mixed := grad_resid1 in
+  let grad_embed_from_resid := grad_resid1 in
+  let '(grad_w_o, grad_attended) :=
+    seq_of_matrix_backprops
+      (hp_d_model hp)
+      (model_w_o m)
+      (firstn (length grad_mixed) (tape_attended_full tape))
+      grad_mixed in
+  let '(grad_queries, grad_keys, grad_values) :=
+    backprop_causal_attention
+      (hp_d_model hp)
+      (firstn (length grad_attended) (tape_queries_full tape))
+      (firstn (length grad_attended) (tape_keys_full tape))
+      (firstn (length grad_attended) (tape_values_full tape))
+      grad_attended in
+  let '(grad_w_q, grad_embed_from_q) :=
+    seq_of_matrix_backprops
+      (hp_d_model hp)
+      (model_w_q m)
+      (firstn (length grad_queries) (tape_embed tape))
+      grad_queries in
+  let '(grad_w_k, grad_embed_from_k) :=
+    seq_of_matrix_backprops
+      (hp_d_model hp)
+      (model_w_k m)
+      (firstn (length grad_keys) (tape_embed tape))
+      grad_keys in
+  let '(grad_w_v, grad_embed_from_v) :=
+    seq_of_matrix_backprops
+      (hp_d_model hp)
+      (model_w_v m)
+      (firstn (length grad_values) (tape_embed tape))
+      grad_values in
+  let grad_embed_inputs :=
+    seq_add
+      grad_embed_from_resid
+      (seq_add grad_embed_from_q (seq_add grad_embed_from_k grad_embed_from_v)) in
+  let grad_embeddings :=
+    embedding_grads_from_inputs
+      (hp_vocab hp)
+      (hp_d_model hp)
+      (firstn (length grad_embed_inputs) (tape_tokens_full tape))
+      grad_embed_inputs in
+  {|
+    grad_model_embeddings := grad_embeddings;
+    grad_model_w_q := grad_w_q;
+    grad_model_w_k := grad_w_k;
+    grad_model_w_v := grad_w_v;
+    grad_model_w_o := grad_w_o;
+    grad_model_w_1 := grad_w1;
+    grad_model_w_2 := grad_w2;
+    grad_model_out_proj := grad_out_proj
+  |}.
+
+Definition full_model_grad_tokens
+  (hp : HyperParams)
+  (m : Model)
+  (tokens : list nat)
+  : ModelGrad :=
+  full_model_grad_from_tape hp m (build_transformer_tape hp m tokens).
+
+Fixpoint full_model_grad_batch_sum
+  (hp : HyperParams)
+  (m : Model)
+  (batch : Batch)
+  : ModelGrad :=
+  match batch with
+  | [] => zero_model_grad hp
+  | tokens :: batch' =>
+      model_grad_add
+        (full_model_grad_tokens hp m tokens)
+        (full_model_grad_batch_sum hp m batch')
+  end.
+
+Definition full_model_grad_batch
+  (hp : HyperParams)
+  (m : Model)
+  (batch : Batch)
+  : ModelGrad :=
+  match batch with
+  | [] => zero_model_grad hp
+  | _ =>
+      model_grad_scale
+        (/ q_of_nat (length batch))
+        (full_model_grad_batch_sum hp m batch)
+  end.
+
+Definition model_batch_loss
+  (hp : HyperParams)
+  (m : Model)
+  (batch : Batch)
+  : Scalar :=
+  mean_scalars (map (model_sequence_loss hp m) batch).
+
+Definition apply_model_sgd_step
+  (learning_rate : Scalar)
+  (hp : HyperParams)
+  (m : Model)
+  (batch : Batch)
+  : Model :=
+  let grad := normalize_model_grad (full_model_grad_batch hp m batch) in
+  model_apply_grad m (model_grad_scale (- learning_rate) grad).
+
+Fixpoint train_model_sgd
+  (fuel : nat)
+  (learning_rate : Scalar)
+  (hp : HyperParams)
+  (m : Model)
+  (batch : Batch)
+  : Model :=
+  match fuel with
+  | O => m
+  | S fuel' =>
+      train_model_sgd fuel' learning_rate hp
+        (apply_model_sgd_step learning_rate hp m batch)
+        batch
+  end.
+
+Record AdamState := {
+  adam_model : Model;
+  adam_moment_1 : ModelGrad;
+  adam_moment_2 : ModelGrad;
+  adam_steps : nat
+}.
+
+Definition zero_adam_state (hp : HyperParams) (m : Model) : AdamState :=
+  {|
+    adam_model := m;
+    adam_moment_1 := zero_model_grad hp;
+    adam_moment_2 := zero_model_grad hp;
+    adam_steps := 0
+  |}.
+
+Definition adam_bias_correction (beta : Scalar) (steps : nat) : Scalar :=
+  1 - scalar_pow beta (S steps).
+
+Definition apply_model_adam_step
+  (learning_rate beta1 beta2 eps : Scalar)
+  (hp : HyperParams)
+  (state : AdamState)
+  (batch : Batch)
+  : AdamState :=
+  let grad := full_model_grad_batch hp (adam_model state) batch in
+  let moment_1 :=
+    model_grad_add
+      (model_grad_scale beta1 (adam_moment_1 state))
+      (model_grad_scale (1 - beta1) grad) in
+  let moment_2 :=
+    model_grad_add
+      (model_grad_scale beta2 (adam_moment_2 state))
+      (model_grad_scale (1 - beta2) (model_grad_square grad)) in
+  let corr1 := adam_bias_correction beta1 (adam_steps state) in
+  let corr2 := adam_bias_correction beta2 (adam_steps state) in
+  let moment_1_hat :=
+    if Qeq_bool corr1 0 then moment_1 else model_grad_scale (/ corr1) moment_1 in
+  let moment_2_hat :=
+    if Qeq_bool corr2 0 then moment_2 else model_grad_scale (/ corr2) moment_2 in
+  let denom := model_grad_add_eps eps (model_grad_sqrt_floor moment_2_hat) in
+  let step_grad :=
+    normalize_model_grad (model_grad_div_safe moment_1_hat denom) in
+  {|
+    adam_model :=
+      model_apply_grad (adam_model state)
+        (model_grad_scale (- learning_rate) step_grad);
+    adam_moment_1 := moment_1;
+    adam_moment_2 := moment_2;
+    adam_steps := S (adam_steps state)
+  |}.
+
+Fixpoint train_model_adam
+  (fuel : nat)
+  (learning_rate beta1 beta2 eps : Scalar)
+  (hp : HyperParams)
+  (state : AdamState)
+  (batch : Batch)
+  : AdamState :=
+  match fuel with
+  | O => state
+  | S fuel' =>
+      train_model_adam fuel' learning_rate beta1 beta2 eps hp
+        (apply_model_adam_step learning_rate beta1 beta2 eps hp state batch)
+        batch
+  end.
+
+(** * Formal tokenization and decoding surfaces. *)
+
+Definition encode_demo_token (token : nat) : nat :=
+  lookup_row token [0%nat; 1%nat; 2%nat; 3%nat] 0%nat.
+
+Definition decode_demo_token (token : nat) : nat :=
+  lookup_row token [0%nat; 1%nat; 2%nat; 3%nat] 0%nat.
+
+Definition encode_demo_sequence (tokens : list nat) : list nat :=
+  map encode_demo_token tokens.
+
+Definition decode_demo_sequence (tokens : list nat) : list nat :=
+  map decode_demo_token tokens.
+
+(** * In-core decoding helpers. *)
+
+Definition token_prob_pair := (nat * Scalar)%type.
+
+Fixpoint enumerate_vector_from (start : nat) (xs : Vector) : list token_prob_pair :=
+  match xs with
+  | [] => []
+  | x :: xs' => (start, x) :: enumerate_vector_from (S start) xs'
+  end.
+
+Definition pair_prob (p : token_prob_pair) : Scalar :=
+  snd p.
+
+Fixpoint insert_pair_desc
+  (p : token_prob_pair)
+  (xs : list token_prob_pair)
+  : list token_prob_pair :=
+  match xs with
+  | [] => [p]
+  | x :: xs' =>
+      if Qle_bool (pair_prob x) (pair_prob p)
+      then p :: xs
+      else x :: insert_pair_desc p xs'
+  end.
+
+Fixpoint sort_pairs_desc (xs : list token_prob_pair) : list token_prob_pair :=
+  match xs with
+  | [] => []
+  | x :: xs' => insert_pair_desc x (sort_pairs_desc xs')
+  end.
+
+Definition temperature_scale_logits (temperature : Scalar) (logits : Vector) : Vector :=
+  if Qeq_bool temperature 0
+  then logits
+  else map (fun logit => logit / temperature) logits.
+
+Definition normalized_pairs_of_logits
+  (temperature : Scalar)
+  (logits : Vector)
+  : list token_prob_pair :=
+  sort_pairs_desc
+    (enumerate_vector_from 0 (normalized_output_distribution (temperature_scale_logits temperature logits))).
+
+Definition renormalize_pairs (pairs : list token_prob_pair) : list token_prob_pair :=
+  let total := sum_scalars (map pair_prob pairs) in
+  if Qeq_bool total 0
+  then pairs
+  else map (fun p => (fst p, snd p / total)) pairs.
+
+Definition top_k_pairs
+  (temperature : Scalar)
+  (logits : Vector)
+  (k : nat)
+  : list token_prob_pair :=
+  renormalize_pairs (firstn k (normalized_pairs_of_logits temperature logits)).
+
+Fixpoint take_until_mass
+  (cutoff mass : Scalar)
+  (pairs : list token_prob_pair)
+  : list token_prob_pair :=
+  match pairs with
+  | [] => []
+  | item :: pairs' =>
+      if Qle_bool cutoff mass
+      then []
+      else item :: take_until_mass cutoff (mass + pair_prob item) pairs'
+  end.
+
+Definition top_p_pairs
+  (temperature cutoff : Scalar)
+  (logits : Vector)
+  : list token_prob_pair :=
+  renormalize_pairs (take_until_mass cutoff 0 (normalized_pairs_of_logits temperature logits)).
+
+Definition top_pair_token
+  (default : nat)
+  (pairs : list token_prob_pair)
+  : nat :=
+  fst (lookup_row 0 pairs (default, 0)).
+
+Definition predict_next_top_k
+  (hp : HyperParams)
+  (m : Model)
+  (temperature : Scalar)
+  (k : nat)
+  (tokens : list nat)
+  : nat :=
+  let hidden := last_hidden_state hp m tokens in
+  top_pair_token 0 (top_k_pairs temperature (logits_for_hidden m hidden) k).
+
+Definition predict_next_top_p
+  (hp : HyperParams)
+  (m : Model)
+  (temperature cutoff : Scalar)
+  (tokens : list nat)
+  : nat :=
+  let hidden := last_hidden_state hp m tokens in
+  top_pair_token 0 (top_p_pairs temperature cutoff (logits_for_hidden m hidden)).
+
+Fixpoint greedy_generate_top_k
+  (fuel : nat)
+  (hp : HyperParams)
+  (m : Model)
+  (temperature : Scalar)
+  (k : nat)
+  (tokens : list nat)
+  : list nat :=
+  match fuel with
+  | O => tokens
+  | S fuel' =>
+      let next := predict_next_top_k hp m temperature k tokens in
+      greedy_generate_top_k fuel' hp m temperature k (tokens ++ [next])
+  end.
+
+Fixpoint greedy_generate_top_p
+  (fuel : nat)
+  (hp : HyperParams)
+  (m : Model)
+  (temperature cutoff : Scalar)
+  (tokens : list nat)
+  : list nat :=
+  match fuel with
+  | O => tokens
+  | S fuel' =>
+      let next := predict_next_top_p hp m temperature cutoff tokens in
+      greedy_generate_top_p fuel' hp m temperature cutoff (tokens ++ [next])
+  end.
+
 (** * Concrete demos. *)
 
 Definition demo1_hp : HyperParams :=
@@ -2202,6 +3062,69 @@ Proof.
   apply demo2_formal_zero_model_wf.
 Qed.
 
+Definition demo2_full_train_batch : Batch :=
+  [[0%nat; 1%nat; 2%nat];
+   [1%nat; 2%nat; 0%nat];
+   [2%nat; 0%nat; 1%nat]].
+
+Definition demo2_full_train_prompt : list nat :=
+  [2%nat; 0%nat].
+
+Definition demo2_full_train_lr : Scalar := 1 / 8.
+
+Definition demo2_full_train_loss_0 : Scalar :=
+  model_batch_loss demo2_hp demo2_model demo2_full_train_batch.
+
+Definition demo2_full_train_grad_0 : ModelGrad :=
+  full_model_grad_batch demo2_hp demo2_model demo2_full_train_batch.
+
+Definition demo2_full_train_model_1 : Model :=
+  train_model_sgd 1 demo2_full_train_lr demo2_hp demo2_model demo2_full_train_batch.
+
+Definition demo2_full_train_loss_1 : Scalar :=
+  model_batch_loss demo2_hp demo2_full_train_model_1 demo2_full_train_batch.
+
+Definition demo2_full_train_prediction_0 : nat :=
+  predict_next demo2_hp demo2_model demo2_full_train_prompt.
+
+Definition demo2_full_train_prediction_1 : nat :=
+  predict_next demo2_hp demo2_full_train_model_1 demo2_full_train_prompt.
+
+Definition demo2_full_train_generated_2 : list nat :=
+  greedy_generate 2 demo2_hp demo2_full_train_model_1 demo2_full_train_prompt.
+
+Definition demo2_full_train_top_k_generated_2 : list nat :=
+  greedy_generate_top_k
+    2
+    demo2_hp
+    demo2_full_train_model_1
+    1
+    2
+    demo2_full_train_prompt.
+
+Definition demo2_full_train_top_p_generated_2 : list nat :=
+  greedy_generate_top_p
+    2
+    demo2_hp
+    demo2_full_train_model_1
+    1
+    (3 / 4)
+    demo2_full_train_prompt.
+
+Definition demo2_full_adam_state_2 : AdamState :=
+  train_model_adam
+    2
+    (1 / 16)
+    (9 / 10)
+    (99 / 100)
+    (1 / 1000)
+    demo2_hp
+    (zero_adam_state demo2_hp demo2_model)
+    demo2_full_train_batch.
+
+Definition demo2_full_adam_prediction_2 : nat :=
+  predict_next demo2_hp (adam_model demo2_full_adam_state_2) demo2_full_train_prompt.
+
 (** Encoded rational outputs for the extracted executable.  Using explicit
     numerator/denominator pairs keeps the OCaml driver simple and avoids any
     dependence on the extracted internal representation of [Q]. *)
@@ -2230,6 +3153,11 @@ Definition demo2_train_grad_bias_encoded := encode_scalar demo2_train_grad_bias.
 
 Definition demo2_formal_loss_0_encoded := encode_scalar demo2_formal_loss_0.
 Definition demo2_formal_loss_4_encoded := encode_scalar demo2_formal_loss_4.
+
+Definition demo2_full_train_loss_0_encoded :=
+  encode_scalar demo2_full_train_loss_0.
+Definition demo2_full_train_loss_1_encoded :=
+  encode_scalar demo2_full_train_loss_1.
 
 (**
   * Extraction.

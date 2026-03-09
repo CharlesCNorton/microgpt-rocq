@@ -30,6 +30,11 @@ Implemented pieces:
 - a reverse-mode backward pass for the readout head
 - a proved output-head SGD update over causal hidden states
 - a proved repeated output-head training loop inside the Rocq development
+- a whole-model reverse-mode-style gradient surface inside the Rocq development
+- whole-model SGD updates over embeddings, attention weights, MLP weights, and output projection
+- an Adam-style optimizer state inside the Rocq development
+- in-core temperature scaling plus top-k and top-p filtered decoding surfaces
+- formal token encoding and decoding helpers for the demo vocabulary
 - a frozen-body output-head training loop in the OCaml executable
 - deterministic and sampled generation paths in the OCaml executable
 
@@ -57,6 +62,11 @@ followed by explicit normalization by the prefix score sum. This keeps the atten
 - output-head gradient shape preservation over batches of causal hidden-state examples
 - output-head SGD preserves model well-formedness
 - concrete properties of the three demo models
+
+The whole-model training and optimizer additions in the current file are executable
+and monolithic with the rest of the formalization. The strongest proof coverage
+still sits on the structural and output-head training surface; the new whole-model
+gradient path is present in the Rocq artifact and exercised by extraction/runtime.
 
 ## Demos
 
@@ -87,10 +97,16 @@ It uses extracted hidden states from the Rocq model, optimizes only the output
 projection in the OCaml driver, and then converts the trained head back into
 small rational weights for extracted prediction and generation.
 
-The Rocq development now also contains a fully formalized output-head training
-surface. That formal path covers per-example logits loss, batch gradients,
-SGD updates, repeated output-head training steps, and model-shape preservation
-through those updates.
+The Rocq development now contains two training surfaces:
+
+- a proved output-head training path with reverse-mode gradients and SGD
+- a whole-model training path that backpropagates through embeddings, attention,
+  the MLP, and the output projection, then drives SGD and Adam-style updates
+
+The executable keeps printing the lighter extracted demos and the OCaml-side
+runtime trainer. The heavier whole-model optimizer definitions live in the Rocq
+source and theorem-bearing build path without being forced through startup-time
+evaluation in the demo binary.
 
 ## Build
 
@@ -119,9 +135,9 @@ GitHub Actions runs the same pipeline on every push and pull request:
 
 Natural follow-on work includes:
 
-- extending reverse-mode differentiation from the readout head to the transformer core
-- replacing the current squared-loss output-head trainer with a proved end-to-end token-training objective for the full transformer
+- strengthening proofs around the whole-model gradient and optimizer path
+- replacing the current squared-loss training objective with a richer token objective
 - introducing a more realistic floating-point or fixed-point numeric model inside the theorem-bearing core
+- scaling the vocabulary and corpus surfaces past the built-in toy setting
 - proving stronger equivalences between optimized and reference implementations
-- moving the remaining executable-side optimizer and data workflow into the proved Rocq development
 - targeting additional extracted runtimes, including Crane

@@ -1,0 +1,13 @@
+*.vo
+*.vos
+*.vok
+*.glob
+*.aux
+*.cmi
+*.cmo
+*.cmx
+*.o
+*.obj
+*.cmxa
+*.a
+microgpt_demo

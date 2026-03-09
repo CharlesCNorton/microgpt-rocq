@@ -2360,6 +2360,7 @@ Proof.
   - unfold outer_product, row_ok in *.
     now rewrite length_map, Hrows.
   - unfold outer_product.
+    clear Hrows.
     induction row_scales as [|scale row_scales IH]; simpl.
     + constructor.
     + constructor.

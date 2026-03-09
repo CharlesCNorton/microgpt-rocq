@@ -2383,9 +2383,9 @@ Proof.
   - destruct Hm as [Hlen Hrows].
     inversion Hrows as [|? ? Hrow Hrows_tail]; subst.
     destruct grad as [|g grad']; simpl in *.
-    + rewrite <- Hlen in Hgrad.
-      discriminate.
-    + rewrite <- Hlen in Hgrad.
+    + simpl in Hgrad.
+      discriminate Hgrad.
+    + simpl in Hgrad.
       inversion Hgrad as [Hgrad_tail].
       apply vec_add_row_ok.
       * unfold row_ok in *.

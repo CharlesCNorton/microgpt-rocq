@@ -1,16 +1,19 @@
 # microgpt-rocq
 
-`microgpt-rocq` is a monolithic Rocq formalization of a small transformer-style language-model core together with OCaml extraction.
+`microgpt-rocq` is a monolithic Rocq formalization of a small transformer-style language-model core with OCaml extraction.
 
-The current repository contains:
+The repository contains:
 
-- a single Rocq development in `MicroGPT.v`
+- a single theorem-bearing Rocq development in `MicroGPT.v`
 - a small OCaml driver in `main.ml`
 - extracted OCaml artifacts generated from the Rocq source
+- a GitHub Actions workflow that proves, extracts, builds, and runs the executable
 
-## Scope
+## What Is Implemented
 
-The implemented model is inference-only and intentionally proof-friendly. It includes:
+The current model is a compact transformer-style inference core with an attached verified training surface for a linear readout head.
+
+Implemented pieces:
 
 - token embeddings
 - query/key/value projections
@@ -18,30 +21,50 @@ The implemented model is inference-only and intentionally proof-friendly. It inc
 - an MLP block
 - output logits
 - next-token prediction by argmax
+- a linear readout head over the final hidden state
+- squared loss for the readout head
+- a reverse-mode backward pass for the readout head
 
-Scalars are exact integers (`Z`). Attention uses the positive kernel:
+Scalars are exact rationals (`Q`), not integers. Attention uses the positive kernel
 
-`1 + |dot(q, k)|`
+`1 + dot(q, k)^2`
 
-instead of exponential softmax. This keeps the program total and makes the core properties easier to prove while preserving a transformer-shaped forward pass.
+followed by explicit normalization by the prefix score sum. This keeps the attention step exact while making it materially closer to a true normalized weighting scheme than the earlier unnormalized integer baseline.
 
-## Proven Properties
+## What Is Proved
 
 `MicroGPT.v` proves:
 
 - vector and matrix shape preservation
 - attention output shape preservation
 - causal prefix invariance for attention
+- cached attention is extensionally equal to recomputed prefix attention
 - transformer block shape preservation
 - forward-pass output shape preservation
-- demo output length and vocabulary bounds
-- the concrete demo prediction equality `demo_prediction = 3`
+- final hidden-state shape preservation
+- readout gradient shape preservation
+- explicit reverse-mode gradient formulas for the readout head
+- concrete properties of the three demo models
 
-Invalid token lookups fall back to the zero vector, so the extracted program remains total.
+## Demos
+
+The extracted executable prints three concrete model runs:
+
+- `demo1`: a nontrivial rational-attention run
+- `demo2`: a simple single-token run used for the verified readout-loss example
+- `demo3`: a second simple run with a different output projection profile
+
+The executable also prints:
+
+- the encoded squared loss for the `demo2` readout example
+- the encoded reverse-mode gradients for the readout weights
+- the encoded reverse-mode gradient for the readout bias
+
+Rational outputs are printed as numerator/denominator pairs.
 
 ## Build
 
-Build from the native Linux tree:
+Build from a native Linux tree with Rocq/Coq 9.0 and OCaml 4.14:
 
 ```bash
 coqc MicroGPT.v
@@ -52,20 +75,23 @@ ocamlopt microgpt_extracted.cmx main.cmx -o microgpt_demo
 ./microgpt_demo
 ```
 
-## Demo Output
+## CI
 
-```text
-tokens=[0; 2; 1]
-prediction=3
-logits=[[3; 0; 3; 6]; [6; 4; 10; 16]; [3; 5; 8; 11]]
-```
+GitHub Actions runs the same pipeline on every push and pull request:
+
+1. install Rocq/Coq 9.0.0
+2. prove `MicroGPT.v`
+3. generate `microgpt_extracted.ml` and `microgpt_extracted.mli`
+4. build the OCaml executable
+5. run the executable
 
 ## Next
 
 Natural follow-on work includes:
 
-- replacing the current attention kernel with a richer normalization scheme
-- adding a trainable loss and reverse-mode differentiation
-- moving from exact integers to a more realistic numeric model
-- proving equivalence between alternate implementations of the forward pass
+- replacing the current rational kernel with a closer analogue of softmax attention
+- extending reverse-mode differentiation from the readout head to the transformer core
+- adding sequence-level or token-level language-model losses
+- introducing a more realistic floating-point or fixed-point numeric model
+- proving stronger equivalences between optimized and reference implementations
 - targeting additional extracted runtimes, including Crane

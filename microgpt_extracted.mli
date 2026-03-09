@@ -6,6 +6,8 @@ type comparison =
 | Lt
 | Gt
 
+val add : int -> int -> int
+
 val map : ('a1 -> 'a2) -> 'a1 list -> 'a2 list
 
 val repeat : 'a1 -> int -> 'a1 list
@@ -27,6 +29,23 @@ module Pos :
   val compare_cont : comparison -> int -> int -> comparison
 
   val compare : int -> int -> comparison
+
+  val eqb : int -> int -> bool
+ end
+
+module Coq_Pos :
+ sig
+  val succ : int -> int
+
+  val add : int -> int -> int
+
+  val add_carry : int -> int -> int
+
+  val mul : int -> int -> int
+
+  val iter_op : ('a1 -> 'a1 -> 'a1) -> int -> 'a1 -> 'a1
+
+  val to_nat : int -> int
  end
 
 module Z :
@@ -41,18 +60,34 @@ module Z :
 
   val add : int -> int -> int
 
+  val opp : int -> int
+
   val mul : int -> int -> int
 
   val compare : int -> int -> comparison
 
   val leb : int -> int -> bool
 
-  val max : int -> int -> int
-
-  val abs : int -> int
+  val eqb : int -> int -> bool
  end
 
-type scalar = int
+type q = { qnum : int; qden : int }
+
+val qeq_bool : q -> q -> bool
+
+val qle_bool : q -> q -> bool
+
+val qplus : q -> q -> q
+
+val qmult : q -> q -> q
+
+val qopp : q -> q
+
+val qminus : q -> q -> q
+
+val qinv : q -> q
+
+type scalar = q
 
 type vector = scalar list
 
@@ -80,7 +115,10 @@ val lookup_row : int -> 'a1 list -> 'a1 -> 'a1
 
 val kernel_score : vector -> vector -> scalar
 
-val attend_acc : vector -> vector list -> vector list -> vector -> vector
+val attend_numerator :
+  vector -> vector list -> vector list -> vector -> vector
+
+val attend_denominator : vector -> vector list -> scalar
 
 val attend : int -> vector -> vector list -> vector list -> vector
 
@@ -106,6 +144,8 @@ val logits_for_hidden : model -> vector -> vector
 
 val transformer_block : hyperParams -> model -> vector list -> vector list
 
+val hidden_states : hyperParams -> model -> int list -> vector list
+
 val forward : hyperParams -> model -> int list -> vector list
 
 val argmax_aux : int -> scalar -> int -> vector -> int
@@ -114,12 +154,89 @@ val argmax : vector -> int
 
 val predict_next : hyperParams -> model -> int list -> int
 
-val demo_hp : hyperParams
+val square : scalar -> scalar
 
-val demo_model : model
+val linear_readout : vector -> scalar -> vector -> scalar
 
-val demo_tokens : int list
+val last_hidden_state : hyperParams -> model -> int list -> vector
 
-val demo_logits : vector list
+type readoutTape = { tape_hidden : vector; tape_weights : vector;
+                     tape_bias : scalar; tape_target : scalar;
+                     tape_prediction : scalar; tape_diff : scalar;
+                     tape_loss : scalar }
 
-val demo_prediction : int
+val build_readout_tape : vector -> scalar -> vector -> scalar -> readoutTape
+
+type readoutGrad = { grad_weights : vector; grad_bias : scalar }
+
+val reverse_readout : readoutTape -> readoutGrad
+
+val readout_example_tape :
+  hyperParams -> model -> int list -> vector -> scalar -> scalar ->
+  readoutTape
+
+val demo1_hp : hyperParams
+
+val demo1_model : model
+
+val demo1_tokens : int list
+
+val demo1_logits : vector list
+
+val demo1_prediction : int
+
+val demo2_hp : hyperParams
+
+val demo2_model : model
+
+val demo2_tokens : int list
+
+val demo2_logits : vector list
+
+val demo2_prediction : int
+
+val demo3_hp : hyperParams
+
+val demo3_model : model
+
+val demo3_tokens : int list
+
+val demo3_logits : vector list
+
+val demo3_prediction : int
+
+val demo2_readout_weights : vector
+
+val demo2_readout_bias : scalar
+
+val demo2_readout_target : scalar
+
+val demo2_readout_tape : readoutTape
+
+val demo2_train_loss : scalar
+
+val demo2_train_grad : readoutGrad
+
+val demo2_train_grad_weights : vector
+
+val demo2_train_grad_bias : scalar
+
+type encoded_scalar = int * int
+
+val encode_scalar : scalar -> encoded_scalar
+
+val encode_vector : vector -> encoded_scalar list
+
+val encode_matrix : vector list -> encoded_scalar list list
+
+val demo1_logits_encoded : encoded_scalar list list
+
+val demo2_logits_encoded : encoded_scalar list list
+
+val demo3_logits_encoded : encoded_scalar list list
+
+val demo2_train_loss_encoded : encoded_scalar
+
+val demo2_train_grad_weights_encoded : encoded_scalar list
+
+val demo2_train_grad_bias_encoded : encoded_scalar

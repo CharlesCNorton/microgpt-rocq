@@ -11,6 +11,13 @@ type comparison =
 | Lt
 | Gt
 
+module Coq__1 = struct
+ (** val add : int -> int -> int **)
+
+ let rec add = (+)
+end
+include Coq__1
+
 (** val map : ('a1 -> 'a2) -> 'a1 list -> 'a2 list **)
 
 let rec map f = function
@@ -54,22 +61,22 @@ module Pos =
       (fun p ->
       (fun f2p1 f2p f1 p ->
   if p<=1 then f1 () else if p mod 2 = 0 then f2p (p/2) else f2p1 (p/2))
-        (fun q -> (fun p->2*p) (add_carry p q))
-        (fun q -> (fun p->1+2*p) (add p q))
+        (fun q0 -> (fun p->2*p) (add_carry p q0))
+        (fun q0 -> (fun p->1+2*p) (add p q0))
         (fun _ -> (fun p->2*p) (succ p))
         y)
       (fun p ->
       (fun f2p1 f2p f1 p ->
   if p<=1 then f1 () else if p mod 2 = 0 then f2p (p/2) else f2p1 (p/2))
-        (fun q -> (fun p->1+2*p) (add p q))
-        (fun q -> (fun p->2*p) (add p q))
+        (fun q0 -> (fun p->1+2*p) (add p q0))
+        (fun q0 -> (fun p->2*p) (add p q0))
         (fun _ -> (fun p->1+2*p) p)
         y)
       (fun _ ->
       (fun f2p1 f2p f1 p ->
   if p<=1 then f1 () else if p mod 2 = 0 then f2p (p/2) else f2p1 (p/2))
-        (fun q -> (fun p->2*p) (succ q))
-        (fun q -> (fun p->1+2*p) q)
+        (fun q0 -> (fun p->2*p) (succ q0))
+        (fun q0 -> (fun p->1+2*p) q0)
         (fun _ -> (fun p->2*p) 1)
         y)
       x
@@ -82,22 +89,22 @@ module Pos =
       (fun p ->
       (fun f2p1 f2p f1 p ->
   if p<=1 then f1 () else if p mod 2 = 0 then f2p (p/2) else f2p1 (p/2))
-        (fun q -> (fun p->1+2*p) (add_carry p q))
-        (fun q -> (fun p->2*p) (add_carry p q))
+        (fun q0 -> (fun p->1+2*p) (add_carry p q0))
+        (fun q0 -> (fun p->2*p) (add_carry p q0))
         (fun _ -> (fun p->1+2*p) (succ p))
         y)
       (fun p ->
       (fun f2p1 f2p f1 p ->
   if p<=1 then f1 () else if p mod 2 = 0 then f2p (p/2) else f2p1 (p/2))
-        (fun q -> (fun p->2*p) (add_carry p q))
-        (fun q -> (fun p->1+2*p) (add p q))
+        (fun q0 -> (fun p->2*p) (add_carry p q0))
+        (fun q0 -> (fun p->1+2*p) (add p q0))
         (fun _ -> (fun p->2*p) (succ p))
         y)
       (fun _ ->
       (fun f2p1 f2p f1 p ->
   if p<=1 then f1 () else if p mod 2 = 0 then f2p (p/2) else f2p1 (p/2))
-        (fun q -> (fun p->1+2*p) (succ q))
-        (fun q -> (fun p->2*p) (succ q))
+        (fun q0 -> (fun p->1+2*p) (succ q0))
+        (fun q0 -> (fun p->2*p) (succ q0))
         (fun _ -> (fun p->1+2*p) 1)
         y)
       x
@@ -130,15 +137,15 @@ module Pos =
       (fun p ->
       (fun f2p1 f2p f1 p ->
   if p<=1 then f1 () else if p mod 2 = 0 then f2p (p/2) else f2p1 (p/2))
-        (fun q -> compare_cont r p q)
-        (fun q -> compare_cont Gt p q)
+        (fun q0 -> compare_cont r p q0)
+        (fun q0 -> compare_cont Gt p q0)
         (fun _ -> Gt)
         y)
       (fun p ->
       (fun f2p1 f2p f1 p ->
   if p<=1 then f1 () else if p mod 2 = 0 then f2p (p/2) else f2p1 (p/2))
-        (fun q -> compare_cont Lt p q)
-        (fun q -> compare_cont r p q)
+        (fun q0 -> compare_cont Lt p q0)
+        (fun q0 -> compare_cont r p q0)
         (fun _ -> Gt)
         y)
       (fun _ ->
@@ -154,6 +161,92 @@ module Pos =
 
   let compare =
     compare_cont Eq
+
+  (** val eqb : int -> int -> bool **)
+
+  let rec eqb p q0 =
+    (fun f2p1 f2p f1 p ->
+  if p<=1 then f1 () else if p mod 2 = 0 then f2p (p/2) else f2p1 (p/2))
+      (fun p0 ->
+      (fun f2p1 f2p f1 p ->
+  if p<=1 then f1 () else if p mod 2 = 0 then f2p (p/2) else f2p1 (p/2))
+        (fun q1 -> eqb p0 q1)
+        (fun _ -> false)
+        (fun _ -> false)
+        q0)
+      (fun p0 ->
+      (fun f2p1 f2p f1 p ->
+  if p<=1 then f1 () else if p mod 2 = 0 then f2p (p/2) else f2p1 (p/2))
+        (fun _ -> false)
+        (fun q1 -> eqb p0 q1)
+        (fun _ -> false)
+        q0)
+      (fun _ ->
+      (fun f2p1 f2p f1 p ->
+  if p<=1 then f1 () else if p mod 2 = 0 then f2p (p/2) else f2p1 (p/2))
+        (fun _ -> false)
+        (fun _ -> false)
+        (fun _ -> true)
+        q0)
+      p
+ end
+
+module Coq_Pos =
+ struct
+  (** val succ : int -> int **)
+
+  let rec succ = Stdlib.Int.succ
+
+  (** val add : int -> int -> int **)
+
+  let rec add = (+)
+
+  (** val add_carry : int -> int -> int **)
+
+  and add_carry x y =
+    (fun f2p1 f2p f1 p ->
+  if p<=1 then f1 () else if p mod 2 = 0 then f2p (p/2) else f2p1 (p/2))
+      (fun p ->
+      (fun f2p1 f2p f1 p ->
+  if p<=1 then f1 () else if p mod 2 = 0 then f2p (p/2) else f2p1 (p/2))
+        (fun q0 -> (fun p->1+2*p) (add_carry p q0))
+        (fun q0 -> (fun p->2*p) (add_carry p q0))
+        (fun _ -> (fun p->1+2*p) (succ p))
+        y)
+      (fun p ->
+      (fun f2p1 f2p f1 p ->
+  if p<=1 then f1 () else if p mod 2 = 0 then f2p (p/2) else f2p1 (p/2))
+        (fun q0 -> (fun p->2*p) (add_carry p q0))
+        (fun q0 -> (fun p->1+2*p) (add p q0))
+        (fun _ -> (fun p->2*p) (succ p))
+        y)
+      (fun _ ->
+      (fun f2p1 f2p f1 p ->
+  if p<=1 then f1 () else if p mod 2 = 0 then f2p (p/2) else f2p1 (p/2))
+        (fun q0 -> (fun p->1+2*p) (succ q0))
+        (fun q0 -> (fun p->2*p) (succ q0))
+        (fun _ -> (fun p->1+2*p) 1)
+        y)
+      x
+
+  (** val mul : int -> int -> int **)
+
+  let rec mul = ( * )
+
+  (** val iter_op : ('a1 -> 'a1 -> 'a1) -> int -> 'a1 -> 'a1 **)
+
+  let rec iter_op op p a =
+    (fun f2p1 f2p f1 p ->
+  if p<=1 then f1 () else if p mod 2 = 0 then f2p (p/2) else f2p1 (p/2))
+      (fun p0 -> op a (iter_op op p0 (op a a)))
+      (fun p0 -> iter_op op p0 (op a a))
+      (fun _ -> a)
+      p
+
+  (** val to_nat : int -> int **)
+
+  let to_nat x =
+    iter_op Coq__1.add x (Stdlib.Int.succ 0)
  end
 
 module Z =
@@ -193,22 +286,22 @@ module Z =
       (fun p ->
       (fun f2p1 f2p f1 p ->
   if p<=1 then f1 () else if p mod 2 = 0 then f2p (p/2) else f2p1 (p/2))
-        (fun q -> double (pos_sub p q))
-        (fun q -> succ_double (pos_sub p q))
+        (fun q0 -> double (pos_sub p q0))
+        (fun q0 -> succ_double (pos_sub p q0))
         (fun _ -> ((fun p->2*p) p))
         y)
       (fun p ->
       (fun f2p1 f2p f1 p ->
   if p<=1 then f1 () else if p mod 2 = 0 then f2p (p/2) else f2p1 (p/2))
-        (fun q -> pred_double (pos_sub p q))
-        (fun q -> double (pos_sub p q))
+        (fun q0 -> pred_double (pos_sub p q0))
+        (fun q0 -> double (pos_sub p q0))
         (fun _ -> (Pos.pred_double p))
         y)
       (fun _ ->
       (fun f2p1 f2p f1 p ->
   if p<=1 then f1 () else if p mod 2 = 0 then f2p (p/2) else f2p1 (p/2))
-        (fun q -> (~-) ((fun p->2*p) q))
-        (fun q -> (~-) (Pos.pred_double q))
+        (fun q0 -> (~-) ((fun p->2*p) q0))
+        (fun q0 -> (~-) (Pos.pred_double q0))
         (fun _ -> 0)
         y)
       x
@@ -216,6 +309,10 @@ module Z =
   (** val add : int -> int -> int **)
 
   let add = (+)
+
+  (** val opp : int -> int **)
+
+  let opp = (~-)
 
   (** val mul : int -> int -> int **)
 
@@ -232,16 +329,74 @@ module Z =
     | Gt -> false
     | _ -> true
 
-  (** val max : int -> int -> int **)
+  (** val eqb : int -> int -> bool **)
 
-  let max = Stdlib.max
-
-  (** val abs : int -> int **)
-
-  let abs = Stdlib.Int.abs
+  let eqb x y =
+    (fun f0 fp fn z -> if z=0 then f0 () else if z>0 then fp z else fn (-z))
+      (fun _ ->
+      (fun f0 fp fn z -> if z=0 then f0 () else if z>0 then fp z else fn (-z))
+        (fun _ -> true)
+        (fun _ -> false)
+        (fun _ -> false)
+        y)
+      (fun p ->
+      (fun f0 fp fn z -> if z=0 then f0 () else if z>0 then fp z else fn (-z))
+        (fun _ -> false)
+        (fun q0 -> Pos.eqb p q0)
+        (fun _ -> false)
+        y)
+      (fun p ->
+      (fun f0 fp fn z -> if z=0 then f0 () else if z>0 then fp z else fn (-z))
+        (fun _ -> false)
+        (fun _ -> false)
+        (fun q0 -> Pos.eqb p q0)
+        y)
+      x
  end
 
-type scalar = int
+type q = { qnum : int; qden : int }
+
+(** val qeq_bool : q -> q -> bool **)
+
+let qeq_bool x y =
+  Z.eqb (Z.mul x.qnum y.qden) (Z.mul y.qnum x.qden)
+
+(** val qle_bool : q -> q -> bool **)
+
+let qle_bool x y =
+  Z.leb (Z.mul x.qnum y.qden) (Z.mul y.qnum x.qden)
+
+(** val qplus : q -> q -> q **)
+
+let qplus x y =
+  { qnum = (Z.add (Z.mul x.qnum y.qden) (Z.mul y.qnum x.qden)); qden =
+    (Coq_Pos.mul x.qden y.qden) }
+
+(** val qmult : q -> q -> q **)
+
+let qmult x y =
+  { qnum = (Z.mul x.qnum y.qnum); qden = (Coq_Pos.mul x.qden y.qden) }
+
+(** val qopp : q -> q **)
+
+let qopp x =
+  { qnum = (Z.opp x.qnum); qden = x.qden }
+
+(** val qminus : q -> q -> q **)
+
+let qminus x y =
+  qplus x (qopp y)
+
+(** val qinv : q -> q **)
+
+let qinv x =
+  (fun f0 fp fn z -> if z=0 then f0 () else if z>0 then fp z else fn (-z))
+    (fun _ -> { qnum = 0; qden = 1 })
+    (fun p -> { qnum = x.qden; qden = p })
+    (fun p -> { qnum = ((~-) x.qden); qden = p })
+    x.qnum
+
+type scalar = q
 
 type vector = scalar list
 
@@ -250,12 +405,12 @@ type matrix = vector list
 (** val zero_vec : int -> vector **)
 
 let zero_vec width =
-  repeat 0 width
+  repeat { qnum = 0; qden = 1 } width
 
 (** val relu : scalar -> scalar **)
 
 let relu x =
-  Z.max 0 x
+  if qle_bool x { qnum = 0; qden = 1 } then { qnum = 0; qden = 1 } else x
 
 (** val vec_add : vector -> vector -> vector **)
 
@@ -265,7 +420,7 @@ let rec vec_add xs ys =
   | x :: xs' ->
     (match ys with
      | [] -> []
-     | y :: ys' -> (Z.add x y) :: (vec_add xs' ys'))
+     | y :: ys' -> (qplus x y) :: (vec_add xs' ys'))
 
 (** val seq_add : vector list -> vector list -> vector list **)
 
@@ -281,17 +436,17 @@ let rec seq_add xs ys =
 
 let rec vec_scale k = function
 | [] -> []
-| x :: xs' -> (Z.mul k x) :: (vec_scale k xs')
+| x :: xs' -> (qmult k x) :: (vec_scale k xs')
 
 (** val dot : vector -> vector -> scalar **)
 
 let rec dot xs ys =
   match xs with
-  | [] -> 0
+  | [] -> { qnum = 0; qden = 1 }
   | x :: xs' ->
     (match ys with
-     | [] -> 0
-     | y :: ys' -> Z.add (Z.mul x y) (dot xs' ys'))
+     | [] -> { qnum = 0; qden = 1 }
+     | y :: ys' -> qplus (qmult x y) (dot xs' ys'))
 
 (** val mat_vec_mul : matrix -> vector -> vector **)
 
@@ -322,25 +477,36 @@ let rec lookup_row n xs default =
 (** val kernel_score : vector -> vector -> scalar **)
 
 let kernel_score query key =
-  Z.add 1 (Z.abs (dot query key))
+  qplus { qnum = 1; qden = 1 } (qmult (dot query key) (dot query key))
 
-(** val attend_acc :
+(** val attend_numerator :
     vector -> vector list -> vector list -> vector -> vector **)
 
-let rec attend_acc query keys values acc =
+let rec attend_numerator query keys values acc =
   match keys with
   | [] -> acc
   | key :: keys' ->
     (match values with
      | [] -> acc
      | value :: values' ->
-       attend_acc query keys' values'
+       attend_numerator query keys' values'
          (vec_add acc (vec_scale (kernel_score query key) value)))
+
+(** val attend_denominator : vector -> vector list -> scalar **)
+
+let rec attend_denominator query = function
+| [] -> { qnum = 0; qden = 1 }
+| key :: keys' ->
+  qplus (kernel_score query key) (attend_denominator query keys')
 
 (** val attend : int -> vector -> vector list -> vector list -> vector **)
 
 let attend width query keys values =
-  attend_acc query keys values (zero_vec width)
+  let denom = attend_denominator query keys in
+  if qeq_bool denom { qnum = 0; qden = 1 }
+  then zero_vec width
+  else vec_scale (qinv denom)
+         (attend_numerator query keys values (zero_vec width))
 
 (** val causal_attention_aux :
     int -> vector list -> vector list -> vector list -> vector list -> vector
@@ -405,19 +571,22 @@ let transformer_block hp m hidden =
   let ff = map (feed_forward m.model_w_1 m.model_w_2) resid1 in
   seq_add resid1 ff
 
+(** val hidden_states : hyperParams -> model -> int list -> vector list **)
+
+let hidden_states hp m tokens =
+  transformer_block hp m (embed_tokens hp m tokens)
+
 (** val forward : hyperParams -> model -> int list -> vector list **)
 
 let forward hp m tokens =
-  let hidden0 = embed_tokens hp m tokens in
-  let hidden1 = transformer_block hp m hidden0 in
-  map (logits_for_hidden m) hidden1
+  map (logits_for_hidden m) (hidden_states hp m tokens)
 
 (** val argmax_aux : int -> scalar -> int -> vector -> int **)
 
 let rec argmax_aux best_idx best_val next_idx = function
 | [] -> best_idx
 | x :: xs' ->
-  if Z.leb best_val x
+  if qle_bool best_val x
   then argmax_aux next_idx x (Stdlib.Int.succ next_idx) xs'
   else argmax_aux best_idx best_val (Stdlib.Int.succ next_idx) xs'
 
@@ -433,41 +602,281 @@ let predict_next hp m tokens =
   let logits = forward hp m tokens in
   let final_logits = last logits (zero_vec hp.hp_vocab) in argmax final_logits
 
-(** val demo_hp : hyperParams **)
+(** val square : scalar -> scalar **)
 
-let demo_hp =
+let square x =
+  qmult x x
+
+(** val linear_readout : vector -> scalar -> vector -> scalar **)
+
+let linear_readout weights bias hidden =
+  qplus (dot weights hidden) bias
+
+(** val last_hidden_state : hyperParams -> model -> int list -> vector **)
+
+let last_hidden_state hp m tokens =
+  last (hidden_states hp m tokens) (zero_vec hp.hp_d_model)
+
+type readoutTape = { tape_hidden : vector; tape_weights : vector;
+                     tape_bias : scalar; tape_target : scalar;
+                     tape_prediction : scalar; tape_diff : scalar;
+                     tape_loss : scalar }
+
+(** val build_readout_tape :
+    vector -> scalar -> vector -> scalar -> readoutTape **)
+
+let build_readout_tape weights bias hidden target =
+  let prediction = linear_readout weights bias hidden in
+  let diff = qminus prediction target in
+  { tape_hidden = hidden; tape_weights = weights; tape_bias = bias;
+  tape_target = target; tape_prediction = prediction; tape_diff = diff;
+  tape_loss = (square diff) }
+
+type readoutGrad = { grad_weights : vector; grad_bias : scalar }
+
+(** val reverse_readout : readoutTape -> readoutGrad **)
+
+let reverse_readout t =
+  let dloss_dprediction =
+    qmult { qnum = ((fun p->2*p) 1); qden = 1 } t.tape_diff
+  in
+  { grad_weights = (vec_scale dloss_dprediction t.tape_hidden); grad_bias =
+  dloss_dprediction }
+
+(** val readout_example_tape :
+    hyperParams -> model -> int list -> vector -> scalar -> scalar ->
+    readoutTape **)
+
+let readout_example_tape hp m tokens weights bias target =
+  build_readout_tape weights bias (last_hidden_state hp m tokens) target
+
+(** val demo1_hp : hyperParams **)
+
+let demo1_hp =
   { hp_vocab = (Stdlib.Int.succ (Stdlib.Int.succ (Stdlib.Int.succ
     (Stdlib.Int.succ 0)))); hp_d_model = (Stdlib.Int.succ (Stdlib.Int.succ
     0)); hp_d_hidden = (Stdlib.Int.succ (Stdlib.Int.succ (Stdlib.Int.succ
     0))) }
 
-(** val demo_model : model **)
+(** val demo1_model : model **)
 
-let demo_model =
-  { model_embeddings =
-    ((1 :: (0 :: [])) :: ((0 :: (1 :: [])) :: ((1 :: (1 :: [])) :: ((((fun p->2*p)
-    1) :: (1 :: [])) :: [])))); model_w_q =
-    ((1 :: (0 :: [])) :: ((0 :: (1 :: [])) :: [])); model_w_k =
-    ((1 :: (0 :: [])) :: ((0 :: (1 :: [])) :: [])); model_w_v =
-    ((1 :: (0 :: [])) :: ((0 :: (1 :: [])) :: [])); model_w_o =
-    ((1 :: (0 :: [])) :: ((0 :: (1 :: [])) :: [])); model_w_1 =
-    ((0 :: (0 :: [])) :: ((0 :: (0 :: [])) :: ((0 :: (0 :: [])) :: [])));
-    model_w_2 = ((0 :: (0 :: (0 :: []))) :: ((0 :: (0 :: (0 :: []))) :: []));
-    model_out_proj =
-    ((1 :: (0 :: [])) :: ((0 :: (1 :: [])) :: ((1 :: (1 :: [])) :: ((((fun p->2*p)
-    1) :: (1 :: [])) :: [])))) }
+let demo1_model =
+  { model_embeddings = (({ qnum = 1; qden = 1 } :: ({ qnum = 0; qden =
+    1 } :: [])) :: (({ qnum = 0; qden = 1 } :: ({ qnum = 1; qden =
+    1 } :: [])) :: (({ qnum = 1; qden = 1 } :: ({ qnum = 1; qden =
+    1 } :: [])) :: (({ qnum = ((fun p->2*p) 1); qden = 1 } :: ({ qnum = 1;
+    qden = 1 } :: [])) :: [])))); model_w_q = (({ qnum = 1; qden =
+    1 } :: ({ qnum = 0; qden = 1 } :: [])) :: (({ qnum = 0; qden =
+    1 } :: ({ qnum = 1; qden = 1 } :: [])) :: [])); model_w_k = (({ qnum = 1;
+    qden = 1 } :: ({ qnum = 0; qden = 1 } :: [])) :: (({ qnum = 0; qden =
+    1 } :: ({ qnum = 1; qden = 1 } :: [])) :: [])); model_w_v = (({ qnum = 1;
+    qden = 1 } :: ({ qnum = 0; qden = 1 } :: [])) :: (({ qnum = 0; qden =
+    1 } :: ({ qnum = 1; qden = 1 } :: [])) :: [])); model_w_o = (({ qnum = 1;
+    qden = 1 } :: ({ qnum = 0; qden = 1 } :: [])) :: (({ qnum = 0; qden =
+    1 } :: ({ qnum = 1; qden = 1 } :: [])) :: [])); model_w_1 = (({ qnum = 0;
+    qden = 1 } :: ({ qnum = 0; qden = 1 } :: [])) :: (({ qnum = 0; qden =
+    1 } :: ({ qnum = 0; qden = 1 } :: [])) :: (({ qnum = 0; qden =
+    1 } :: ({ qnum = 0; qden = 1 } :: [])) :: []))); model_w_2 = (({ qnum =
+    0; qden = 1 } :: ({ qnum = 0; qden = 1 } :: ({ qnum = 0; qden =
+    1 } :: []))) :: (({ qnum = 0; qden = 1 } :: ({ qnum = 0; qden =
+    1 } :: ({ qnum = 0; qden = 1 } :: []))) :: [])); model_out_proj =
+    (({ qnum = 1; qden = 1 } :: ({ qnum = 0; qden = 1 } :: [])) :: (({ qnum =
+    0; qden = 1 } :: ({ qnum = 1; qden = 1 } :: [])) :: (({ qnum = 1; qden =
+    1 } :: ({ qnum = 1; qden = 1 } :: [])) :: (({ qnum = ((fun p->2*p) 1);
+    qden = 1 } :: ({ qnum = 1; qden = 1 } :: [])) :: [])))) }
 
-(** val demo_tokens : int list **)
+(** val demo1_tokens : int list **)
 
-let demo_tokens =
+let demo1_tokens =
   0 :: ((Stdlib.Int.succ (Stdlib.Int.succ 0)) :: ((Stdlib.Int.succ 0) :: []))
 
-(** val demo_logits : vector list **)
+(** val demo1_logits : vector list **)
 
-let demo_logits =
-  forward demo_hp demo_model demo_tokens
+let demo1_logits =
+  forward demo1_hp demo1_model demo1_tokens
 
-(** val demo_prediction : int **)
+(** val demo1_prediction : int **)
 
-let demo_prediction =
-  predict_next demo_hp demo_model demo_tokens
+let demo1_prediction =
+  predict_next demo1_hp demo1_model demo1_tokens
+
+(** val demo2_hp : hyperParams **)
+
+let demo2_hp =
+  { hp_vocab = (Stdlib.Int.succ (Stdlib.Int.succ (Stdlib.Int.succ 0)));
+    hp_d_model = (Stdlib.Int.succ (Stdlib.Int.succ 0)); hp_d_hidden =
+    (Stdlib.Int.succ (Stdlib.Int.succ 0)) }
+
+(** val demo2_model : model **)
+
+let demo2_model =
+  { model_embeddings = (({ qnum = 1; qden = 1 } :: ({ qnum = 0; qden =
+    1 } :: [])) :: (({ qnum = 0; qden = 1 } :: ({ qnum = 1; qden =
+    1 } :: [])) :: (({ qnum = 1; qden = 1 } :: ({ qnum = 1; qden =
+    1 } :: [])) :: []))); model_w_q = (({ qnum = 0; qden = 1 } :: ({ qnum =
+    0; qden = 1 } :: [])) :: (({ qnum = 0; qden = 1 } :: ({ qnum = 0; qden =
+    1 } :: [])) :: [])); model_w_k = (({ qnum = 0; qden = 1 } :: ({ qnum = 0;
+    qden = 1 } :: [])) :: (({ qnum = 0; qden = 1 } :: ({ qnum = 0; qden =
+    1 } :: [])) :: [])); model_w_v = (({ qnum = 0; qden = 1 } :: ({ qnum = 0;
+    qden = 1 } :: [])) :: (({ qnum = 0; qden = 1 } :: ({ qnum = 0; qden =
+    1 } :: [])) :: [])); model_w_o = (({ qnum = 0; qden = 1 } :: ({ qnum = 0;
+    qden = 1 } :: [])) :: (({ qnum = 0; qden = 1 } :: ({ qnum = 0; qden =
+    1 } :: [])) :: [])); model_w_1 = (({ qnum = 0; qden = 1 } :: ({ qnum = 0;
+    qden = 1 } :: [])) :: (({ qnum = 0; qden = 1 } :: ({ qnum = 0; qden =
+    1 } :: [])) :: [])); model_w_2 = (({ qnum = 0; qden = 1 } :: ({ qnum = 0;
+    qden = 1 } :: [])) :: (({ qnum = 0; qden = 1 } :: ({ qnum = 0; qden =
+    1 } :: [])) :: [])); model_out_proj = (({ qnum = 1; qden =
+    1 } :: ({ qnum = 0; qden = 1 } :: [])) :: (({ qnum = 0; qden =
+    1 } :: ({ qnum = 1; qden = 1 } :: [])) :: (({ qnum = 0; qden =
+    1 } :: ({ qnum = 0; qden = 1 } :: [])) :: []))) }
+
+(** val demo2_tokens : int list **)
+
+let demo2_tokens =
+  (Stdlib.Int.succ (Stdlib.Int.succ 0)) :: []
+
+(** val demo2_logits : vector list **)
+
+let demo2_logits =
+  forward demo2_hp demo2_model demo2_tokens
+
+(** val demo2_prediction : int **)
+
+let demo2_prediction =
+  predict_next demo2_hp demo2_model demo2_tokens
+
+(** val demo3_hp : hyperParams **)
+
+let demo3_hp =
+  { hp_vocab = (Stdlib.Int.succ (Stdlib.Int.succ (Stdlib.Int.succ
+    (Stdlib.Int.succ 0)))); hp_d_model = (Stdlib.Int.succ (Stdlib.Int.succ
+    0)); hp_d_hidden = (Stdlib.Int.succ (Stdlib.Int.succ 0)) }
+
+(** val demo3_model : model **)
+
+let demo3_model =
+  { model_embeddings = (({ qnum = 1; qden = 1 } :: ({ qnum = 0; qden =
+    1 } :: [])) :: (({ qnum = 0; qden = 1 } :: ({ qnum = 1; qden =
+    1 } :: [])) :: (({ qnum = ((fun p->2*p) 1); qden = 1 } :: ({ qnum = 1;
+    qden = 1 } :: [])) :: (({ qnum = 1; qden = 1 } :: ({ qnum = ((fun p->2*p)
+    1); qden = 1 } :: [])) :: [])))); model_w_q = (({ qnum = 0; qden =
+    1 } :: ({ qnum = 0; qden = 1 } :: [])) :: (({ qnum = 0; qden =
+    1 } :: ({ qnum = 0; qden = 1 } :: [])) :: [])); model_w_k = (({ qnum = 0;
+    qden = 1 } :: ({ qnum = 0; qden = 1 } :: [])) :: (({ qnum = 0; qden =
+    1 } :: ({ qnum = 0; qden = 1 } :: [])) :: [])); model_w_v = (({ qnum = 0;
+    qden = 1 } :: ({ qnum = 0; qden = 1 } :: [])) :: (({ qnum = 0; qden =
+    1 } :: ({ qnum = 0; qden = 1 } :: [])) :: [])); model_w_o = (({ qnum = 0;
+    qden = 1 } :: ({ qnum = 0; qden = 1 } :: [])) :: (({ qnum = 0; qden =
+    1 } :: ({ qnum = 0; qden = 1 } :: [])) :: [])); model_w_1 = (({ qnum = 0;
+    qden = 1 } :: ({ qnum = 0; qden = 1 } :: [])) :: (({ qnum = 0; qden =
+    1 } :: ({ qnum = 0; qden = 1 } :: [])) :: [])); model_w_2 = (({ qnum = 0;
+    qden = 1 } :: ({ qnum = 0; qden = 1 } :: [])) :: (({ qnum = 0; qden =
+    1 } :: ({ qnum = 0; qden = 1 } :: [])) :: [])); model_out_proj =
+    (({ qnum = 0; qden = 1 } :: ({ qnum = 1; qden = 1 } :: [])) :: (({ qnum =
+    ((fun p->2*p) 1); qden = 1 } :: ({ qnum = 0; qden =
+    1 } :: [])) :: (({ qnum = 1; qden = 1 } :: ({ qnum = 1; qden =
+    1 } :: [])) :: (({ qnum = 0; qden = 1 } :: ({ qnum = ((fun p->1+2*p) 1);
+    qden = 1 } :: [])) :: [])))) }
+
+(** val demo3_tokens : int list **)
+
+let demo3_tokens =
+  0 :: ((Stdlib.Int.succ (Stdlib.Int.succ (Stdlib.Int.succ 0))) :: [])
+
+(** val demo3_logits : vector list **)
+
+let demo3_logits =
+  forward demo3_hp demo3_model demo3_tokens
+
+(** val demo3_prediction : int **)
+
+let demo3_prediction =
+  predict_next demo3_hp demo3_model demo3_tokens
+
+(** val demo2_readout_weights : vector **)
+
+let demo2_readout_weights =
+  { qnum = 1; qden = 1 } :: ({ qnum = ((fun p->2*p) 1); qden = 1 } :: [])
+
+(** val demo2_readout_bias : scalar **)
+
+let demo2_readout_bias =
+  { qnum = 0; qden = 1 }
+
+(** val demo2_readout_target : scalar **)
+
+let demo2_readout_target =
+  { qnum = 1; qden = 1 }
+
+(** val demo2_readout_tape : readoutTape **)
+
+let demo2_readout_tape =
+  readout_example_tape demo2_hp demo2_model demo2_tokens
+    demo2_readout_weights demo2_readout_bias demo2_readout_target
+
+(** val demo2_train_loss : scalar **)
+
+let demo2_train_loss =
+  demo2_readout_tape.tape_loss
+
+(** val demo2_train_grad : readoutGrad **)
+
+let demo2_train_grad =
+  reverse_readout demo2_readout_tape
+
+(** val demo2_train_grad_weights : vector **)
+
+let demo2_train_grad_weights =
+  demo2_train_grad.grad_weights
+
+(** val demo2_train_grad_bias : scalar **)
+
+let demo2_train_grad_bias =
+  demo2_train_grad.grad_bias
+
+type encoded_scalar = int * int
+
+(** val encode_scalar : scalar -> encoded_scalar **)
+
+let encode_scalar x =
+  (x.qnum, (Coq_Pos.to_nat x.qden))
+
+(** val encode_vector : vector -> encoded_scalar list **)
+
+let encode_vector xs =
+  map encode_scalar xs
+
+(** val encode_matrix : vector list -> encoded_scalar list list **)
+
+let encode_matrix xs =
+  map encode_vector xs
+
+(** val demo1_logits_encoded : encoded_scalar list list **)
+
+let demo1_logits_encoded =
+  encode_matrix demo1_logits
+
+(** val demo2_logits_encoded : encoded_scalar list list **)
+
+let demo2_logits_encoded =
+  encode_matrix demo2_logits
+
+(** val demo3_logits_encoded : encoded_scalar list list **)
+
+let demo3_logits_encoded =
+  encode_matrix demo3_logits
+
+(** val demo2_train_loss_encoded : encoded_scalar **)
+
+let demo2_train_loss_encoded =
+  encode_scalar demo2_train_loss
+
+(** val demo2_train_grad_weights_encoded : encoded_scalar list **)
+
+let demo2_train_grad_weights_encoded =
+  encode_vector demo2_train_grad_weights
+
+(** val demo2_train_grad_bias_encoded : encoded_scalar **)
+
+let demo2_train_grad_bias_encoded =
+  encode_scalar demo2_train_grad_bias

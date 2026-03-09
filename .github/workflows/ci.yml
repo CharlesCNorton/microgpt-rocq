@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up OCaml
+        uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: 4.14.2
+
+      - name: Install Rocq
+        shell: bash
+        run: |
+          set -eux
+          eval "$(opam env)"
+          opam repo add coq-released https://coq.inria.fr/opam/released
+          opam install -y coq.9.0.0
+
+      - name: Prove and extract
+        shell: bash
+        run: |
+          set -eux
+          eval "$(opam env)"
+          coqc MicroGPT.v
+
+      - name: Build OCaml executable
+        shell: bash
+        run: |
+          set -eux
+          eval "$(opam env)"
+          ocamlopt -c microgpt_extracted.mli
+          ocamlopt -c microgpt_extracted.ml
+          ocamlopt -c main.ml
+          ocamlopt microgpt_extracted.cmx main.cmx -o microgpt_demo
+
+      - name: Run executable
+        shell: bash
+        run: |
+          set -eux
+          ./microgpt_demo

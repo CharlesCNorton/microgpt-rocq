@@ -150,6 +150,18 @@ let print_demo ?generated ?sequence_loss ?batch_loss name tokens prediction logi
    | None -> ()
    | Some x -> Printf.printf "  batch_loss=%s\n" (string_of_encoded_scalar x))
 
+let print_formal_training_demo () =
+  Printf.printf "formal_train_demo\n";
+  Printf.printf "  prompt=%s\n" (string_of_int_list M.demo2_formal_training_prompt);
+  Printf.printf "  prompt_text=\"%s\"\n" (decode_tokens M.demo2_formal_training_prompt);
+  Printf.printf "  learning_rate=%s\n" (string_of_q M.demo2_formal_learning_rate);
+  Printf.printf "  initial_loss=%s\n" (string_of_encoded_scalar M.demo2_formal_loss_0_encoded);
+  Printf.printf "  initial_prediction=%s\n" (word_of_token M.demo2_formal_prediction_0);
+  Printf.printf "  trained_loss=%s\n" (string_of_encoded_scalar M.demo2_formal_loss_4_encoded);
+  Printf.printf "  trained_prediction=%s\n" (word_of_token M.demo2_formal_prediction_4);
+  Printf.printf "  trained_greedy=%s\n" (string_of_int_list M.demo2_formal_generated_3);
+  Printf.printf "  trained_greedy_text=\"%s\"\n" (decode_tokens M.demo2_formal_generated_3)
+
 (* ------------------------------------------------------------------------- *)
 (* Frozen-body output-head training.                                         *)
 (* ------------------------------------------------------------------------- *)
@@ -541,5 +553,7 @@ let () =
     (string_of_q_vector M.demo2_train_grad_weights);
   Printf.printf "demo2_train_grad_bias=%s\n"
     (string_of_q M.demo2_train_grad_bias);
+  print_endline "";
+  print_formal_training_demo ();
   print_endline "";
   print_training_demo ()

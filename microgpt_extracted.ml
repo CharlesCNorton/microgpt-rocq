@@ -42,6 +42,16 @@ let rec repeat x n =
     (fun k -> x :: (repeat x k))
     n
 
+(** val firstn : int -> 'a1 list -> 'a1 list **)
+
+let rec firstn n l =
+  (fun fO fS n -> if n=0 then fO () else fS (n-1))
+    (fun _ -> [])
+    (fun n0 -> match l with
+               | [] -> []
+               | a :: l0 -> a :: (firstn n0 l0))
+    n
+
 (** val tl : 'a1 list -> 'a1 list **)
 
 let tl = function
@@ -807,6 +817,147 @@ let reverse_readout t =
 let readout_example_tape hp m tokens weights bias target =
   build_readout_tape weights bias (last_hidden_state hp m tokens) target
 
+(** val zero_matrix : int -> int -> matrix **)
+
+let zero_matrix rows cols =
+  repeat (zero_vec cols) rows
+
+(** val matrix_scale : scalar -> matrix -> matrix **)
+
+let matrix_scale k m =
+  map (vec_scale k) m
+
+(** val vec_sub : vector -> vector -> vector **)
+
+let rec vec_sub xs ys =
+  match xs with
+  | [] -> []
+  | x :: xs' ->
+    (match ys with
+     | [] -> []
+     | y :: ys' -> (qminus x y) :: (vec_sub xs' ys'))
+
+(** val matrix_sum : int -> int -> matrix list -> matrix **)
+
+let rec matrix_sum rows cols = function
+| [] -> zero_matrix rows cols
+| m :: ms' -> seq_add m (matrix_sum rows cols ms')
+
+type outputHeadExample = { example_hidden_state : vector;
+                           example_next_token : int }
+
+(** val zip_output_head_examples :
+    vector list -> int list -> outputHeadExample list **)
+
+let rec zip_output_head_examples hidden targets =
+  match hidden with
+  | [] -> []
+  | h :: hidden' ->
+    (match targets with
+     | [] -> []
+     | target :: targets' ->
+       { example_hidden_state = h; example_next_token =
+         target } :: (zip_output_head_examples hidden' targets'))
+
+(** val output_head_examples_of_tokens :
+    hyperParams -> model -> int list -> outputHeadExample list **)
+
+let output_head_examples_of_tokens hp m tokens =
+  let targets = next_token_targets tokens in
+  let hidden = hidden_states hp m tokens in
+  zip_output_head_examples (firstn (length targets) hidden) targets
+
+(** val output_head_examples_of_batch :
+    hyperParams -> model -> batch -> outputHeadExample list **)
+
+let rec output_head_examples_of_batch hp m = function
+| [] -> []
+| tokens :: batch' ->
+  app (output_head_examples_of_tokens hp m tokens)
+    (output_head_examples_of_batch hp m batch')
+
+(** val output_head_loss_factor : hyperParams -> scalar **)
+
+let output_head_loss_factor hp =
+  (fun fO fS n -> if n=0 then fO () else fS (n-1))
+    (fun _ -> { qnum = 0; qden = 1 })
+    (fun n ->
+    qdiv { qnum = ((fun p->2*p) 1); qden = 1 } (q_of_nat (Stdlib.Int.succ n)))
+    hp.hp_vocab
+
+(** val output_head_logits_loss_for_example :
+    hyperParams -> model -> outputHeadExample -> scalar **)
+
+let output_head_logits_loss_for_example hp m ex =
+  let logits = logits_for_hidden m ex.example_hidden_state in
+  let targets = one_hot_vector hp.hp_vocab ex.example_next_token in
+  (match logits with
+   | [] -> { qnum = 0; qden = 1 }
+   | _ :: _ ->
+     qdiv (lm_squared_error_sum logits targets) (q_of_nat (length logits)))
+
+(** val output_head_row_factors :
+    hyperParams -> model -> outputHeadExample -> vector **)
+
+let output_head_row_factors hp m ex =
+  let logits = logits_for_hidden m ex.example_hidden_state in
+  let targets = one_hot_vector hp.hp_vocab ex.example_next_token in
+  vec_scale (output_head_loss_factor hp) (vec_sub logits targets)
+
+(** val output_head_logits_grad_for_example :
+    hyperParams -> model -> outputHeadExample -> matrix **)
+
+let output_head_logits_grad_for_example hp m ex =
+  map (fun row_scale -> vec_scale row_scale ex.example_hidden_state)
+    (output_head_row_factors hp m ex)
+
+(** val output_head_logits_loss_batch :
+    hyperParams -> model -> batch -> scalar **)
+
+let output_head_logits_loss_batch hp m batch0 =
+  mean_scalars
+    (map (output_head_logits_loss_for_example hp m)
+      (output_head_examples_of_batch hp m batch0))
+
+(** val output_head_logits_grad_batch :
+    hyperParams -> model -> batch -> matrix **)
+
+let output_head_logits_grad_batch hp m batch0 =
+  let examples = output_head_examples_of_batch hp m batch0 in
+  (match examples with
+   | [] -> zero_matrix hp.hp_vocab hp.hp_d_model
+   | _ :: _ ->
+     matrix_scale (qinv (q_of_nat (length examples)))
+       (matrix_sum hp.hp_vocab hp.hp_d_model
+         (map (output_head_logits_grad_for_example hp m) examples)))
+
+(** val model_with_output_projection : model -> matrix -> model **)
+
+let model_with_output_projection m out_proj =
+  { model_embeddings = m.model_embeddings; model_w_q = m.model_w_q;
+    model_w_k = m.model_w_k; model_w_v = m.model_w_v; model_w_o =
+    m.model_w_o; model_w_1 = m.model_w_1; model_w_2 = m.model_w_2;
+    model_out_proj = out_proj }
+
+(** val apply_output_head_sgd_step :
+    scalar -> hyperParams -> model -> batch -> model **)
+
+let apply_output_head_sgd_step learning_rate hp m batch0 =
+  let grad = output_head_logits_grad_batch hp m batch0 in
+  let update = matrix_scale (qopp learning_rate) grad in
+  model_with_output_projection m (seq_add m.model_out_proj update)
+
+(** val train_output_head_sgd :
+    int -> scalar -> hyperParams -> model -> batch -> model **)
+
+let rec train_output_head_sgd fuel learning_rate hp m batch0 =
+  (fun fO fS n -> if n=0 then fO () else fS (n-1))
+    (fun _ -> m)
+    (fun fuel' ->
+    train_output_head_sgd fuel' learning_rate hp
+      (apply_output_head_sgd_step learning_rate hp m batch0) batch0)
+    fuel
+
 (** val demo1_hp : hyperParams **)
 
 let demo1_hp =
@@ -1014,6 +1165,65 @@ let demo2_train_grad_weights =
 let demo2_train_grad_bias =
   demo2_train_grad.grad_bias
 
+(** val demo2_formal_training_batch : batch **)
+
+let demo2_formal_training_batch =
+  (0 :: ((Stdlib.Int.succ 0) :: [])) :: (((Stdlib.Int.succ
+    0) :: ((Stdlib.Int.succ (Stdlib.Int.succ
+    0)) :: [])) :: (((Stdlib.Int.succ (Stdlib.Int.succ
+    0)) :: (0 :: [])) :: []))
+
+(** val demo2_formal_training_prompt : int list **)
+
+let demo2_formal_training_prompt =
+  (Stdlib.Int.succ (Stdlib.Int.succ 0)) :: []
+
+(** val demo2_formal_learning_rate : scalar **)
+
+let demo2_formal_learning_rate =
+  qdiv { qnum = 1; qden = 1 } { qnum = ((fun p->2*p) 1); qden = 1 }
+
+(** val demo2_formal_zero_model : model **)
+
+let demo2_formal_zero_model =
+  model_with_output_projection demo2_model
+    (zero_matrix demo2_hp.hp_vocab demo2_hp.hp_d_model)
+
+(** val demo2_formal_loss_0 : scalar **)
+
+let demo2_formal_loss_0 =
+  output_head_logits_loss_batch demo2_hp demo2_formal_zero_model
+    demo2_formal_training_batch
+
+(** val demo2_formal_prediction_0 : int **)
+
+let demo2_formal_prediction_0 =
+  predict_next demo2_hp demo2_formal_zero_model demo2_formal_training_prompt
+
+(** val demo2_formal_model_4 : model **)
+
+let demo2_formal_model_4 =
+  train_output_head_sgd (Stdlib.Int.succ (Stdlib.Int.succ (Stdlib.Int.succ
+    (Stdlib.Int.succ 0)))) demo2_formal_learning_rate demo2_hp
+    demo2_formal_zero_model demo2_formal_training_batch
+
+(** val demo2_formal_loss_4 : scalar **)
+
+let demo2_formal_loss_4 =
+  output_head_logits_loss_batch demo2_hp demo2_formal_model_4
+    demo2_formal_training_batch
+
+(** val demo2_formal_prediction_4 : int **)
+
+let demo2_formal_prediction_4 =
+  predict_next demo2_hp demo2_formal_model_4 demo2_formal_training_prompt
+
+(** val demo2_formal_generated_3 : int list **)
+
+let demo2_formal_generated_3 =
+  greedy_generate (Stdlib.Int.succ (Stdlib.Int.succ (Stdlib.Int.succ 0)))
+    demo2_hp demo2_formal_model_4 demo2_formal_training_prompt
+
 type encoded_scalar = int * int
 
 (** val encode_scalar : scalar -> encoded_scalar **)
@@ -1070,3 +1280,13 @@ let demo2_train_grad_weights_encoded =
 
 let demo2_train_grad_bias_encoded =
   encode_scalar demo2_train_grad_bias
+
+(** val demo2_formal_loss_0_encoded : encoded_scalar **)
+
+let demo2_formal_loss_0_encoded =
+  encode_scalar demo2_formal_loss_0
+
+(** val demo2_formal_loss_4_encoded : encoded_scalar **)
+
+let demo2_formal_loss_4_encoded =
+  encode_scalar demo2_formal_loss_4

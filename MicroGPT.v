@@ -1392,6 +1392,472 @@ Proof.
     exact Hhidden.
 Qed.
 
+(** * Formal output-head training over causal hidden states. *)
+
+Definition zero_matrix (rows cols : nat) : Matrix :=
+  repeat (zero_vec cols) rows.
+
+Definition matrix_scale (k : Scalar) (m : Matrix) : Matrix :=
+  map (vec_scale k) m.
+
+Fixpoint vec_sub (xs ys : Vector) : Vector :=
+  match xs, ys with
+  | x :: xs', y :: ys' => (x - y) :: vec_sub xs' ys'
+  | _, _ => []
+  end.
+
+Fixpoint matrix_sum (rows cols : nat) (ms : list Matrix) : Matrix :=
+  match ms with
+  | [] => zero_matrix rows cols
+  | m :: ms' => seq_add m (matrix_sum rows cols ms')
+  end.
+
+Record OutputHeadExample := {
+  example_hidden_state : Vector;
+  example_next_token : nat
+}.
+
+Fixpoint zip_output_head_examples
+  (hidden : list Vector)
+  (targets : list nat)
+  : list OutputHeadExample :=
+  match hidden, targets with
+  | h :: hidden', target :: targets' =>
+      {| example_hidden_state := h; example_next_token := target |} ::
+      zip_output_head_examples hidden' targets'
+  | _, _ => []
+  end.
+
+Definition output_head_examples_of_tokens
+  (hp : HyperParams)
+  (m : Model)
+  (tokens : list nat)
+  : list OutputHeadExample :=
+  let targets := next_token_targets tokens in
+  let hidden := hidden_states hp m tokens in
+  zip_output_head_examples (firstn (length targets) hidden) targets.
+
+Fixpoint output_head_examples_of_batch
+  (hp : HyperParams)
+  (m : Model)
+  (batch : Batch)
+  : list OutputHeadExample :=
+  match batch with
+  | [] => []
+  | tokens :: batch' =>
+      output_head_examples_of_tokens hp m tokens ++
+      output_head_examples_of_batch hp m batch'
+  end.
+
+Definition output_head_loss_factor (hp : HyperParams) : Scalar :=
+  match hp_vocab hp with
+  | O => 0
+  | S n => 2 / q_of_nat (S n)
+  end.
+
+Definition output_head_logits_loss_for_example
+  (hp : HyperParams)
+  (m : Model)
+  (ex : OutputHeadExample)
+  : Scalar :=
+  let logits := logits_for_hidden m (example_hidden_state ex) in
+  let targets := one_hot_vector (hp_vocab hp) (example_next_token ex) in
+  lm_mean_squared_error logits targets.
+
+Definition output_head_row_factors
+  (hp : HyperParams)
+  (m : Model)
+  (ex : OutputHeadExample)
+  : Vector :=
+  let logits := logits_for_hidden m (example_hidden_state ex) in
+  let targets := one_hot_vector (hp_vocab hp) (example_next_token ex) in
+  vec_scale (output_head_loss_factor hp) (vec_sub logits targets).
+
+Definition output_head_logits_grad_for_example
+  (hp : HyperParams)
+  (m : Model)
+  (ex : OutputHeadExample)
+  : Matrix :=
+  map (fun row_scale => vec_scale row_scale (example_hidden_state ex))
+      (output_head_row_factors hp m ex).
+
+Definition output_head_logits_loss_batch
+  (hp : HyperParams)
+  (m : Model)
+  (batch : Batch)
+  : Scalar :=
+  mean_scalars
+    (map (output_head_logits_loss_for_example hp m)
+         (output_head_examples_of_batch hp m batch)).
+
+Definition output_head_logits_grad_batch
+  (hp : HyperParams)
+  (m : Model)
+  (batch : Batch)
+  : Matrix :=
+  let examples := output_head_examples_of_batch hp m batch in
+  match examples with
+  | [] => zero_matrix (hp_vocab hp) (hp_d_model hp)
+  | _ =>
+      matrix_scale
+        (/ q_of_nat (length examples))
+        (matrix_sum
+           (hp_vocab hp)
+           (hp_d_model hp)
+           (map (output_head_logits_grad_for_example hp m) examples))
+  end.
+
+Definition model_with_output_projection
+  (m : Model)
+  (out_proj : Matrix)
+  : Model :=
+  {|
+    model_embeddings := model_embeddings m;
+    model_w_q := model_w_q m;
+    model_w_k := model_w_k m;
+    model_w_v := model_w_v m;
+    model_w_o := model_w_o m;
+    model_w_1 := model_w_1 m;
+    model_w_2 := model_w_2 m;
+    model_out_proj := out_proj
+  |}.
+
+Definition apply_output_head_sgd_step
+  (learning_rate : Scalar)
+  (hp : HyperParams)
+  (m : Model)
+  (batch : Batch)
+  : Model :=
+  let grad := output_head_logits_grad_batch hp m batch in
+  let update := matrix_scale (- learning_rate) grad in
+  model_with_output_projection m (seq_add (model_out_proj m) update).
+
+Fixpoint train_output_head_sgd
+  (fuel : nat)
+  (learning_rate : Scalar)
+  (hp : HyperParams)
+  (m : Model)
+  (batch : Batch)
+  : Model :=
+  match fuel with
+  | O => m
+  | S fuel' =>
+      train_output_head_sgd fuel' learning_rate hp
+        (apply_output_head_sgd_step learning_rate hp m batch)
+        batch
+  end.
+
+Lemma zero_matrix_ok :
+  forall rows cols,
+    matrix_ok rows cols (zero_matrix rows cols).
+Proof.
+  intros rows cols.
+  split.
+  - unfold zero_matrix.
+    now rewrite repeat_length.
+  - unfold zero_matrix.
+    induction rows as [|rows IH]; simpl.
+    + constructor.
+    + constructor.
+      * apply row_ok_zero_vec.
+      * exact IH.
+Qed.
+
+Lemma matrix_scale_row_ok :
+  forall width k m,
+    Forall (row_ok width) m ->
+    Forall (row_ok width) (matrix_scale k m).
+Proof.
+  intros width k m Hrows.
+  unfold matrix_scale.
+  induction Hrows as [|row rows' Hrow Hrows' IH]; simpl.
+  - constructor.
+  - constructor.
+    + unfold row_ok in *.
+      now rewrite vec_scale_length, Hrow.
+    + exact IH.
+Qed.
+
+Lemma matrix_scale_ok :
+  forall rows cols k m,
+    matrix_ok rows cols m ->
+    matrix_ok rows cols (matrix_scale k m).
+Proof.
+  intros rows cols k m [Hlen Hrows].
+  split.
+  - unfold matrix_scale.
+    now rewrite length_map, Hlen.
+  - apply matrix_scale_row_ok.
+    exact Hrows.
+Qed.
+
+Lemma vec_sub_length :
+  forall xs ys,
+    length xs = length ys ->
+    length (vec_sub xs ys) = length xs.
+Proof.
+  induction xs as [|x xs IH]; intros ys Hlen.
+  - destruct ys; simpl in *; auto; discriminate.
+  - destruct ys as [|y ys]; simpl in *; try discriminate.
+    simpl.
+    f_equal.
+    apply IH.
+    now inversion Hlen.
+Qed.
+
+Lemma vec_sub_row_ok :
+  forall width xs ys,
+    row_ok width xs ->
+    row_ok width ys ->
+    row_ok width (vec_sub xs ys).
+Proof.
+  intros width xs ys Hx Hy.
+  unfold row_ok in *.
+  rewrite vec_sub_length.
+  - exact Hx.
+  - now rewrite Hx, Hy.
+Qed.
+
+Lemma matrix_add_ok :
+  forall rows cols a b,
+    matrix_ok rows cols a ->
+    matrix_ok rows cols b ->
+    matrix_ok rows cols (seq_add a b).
+Proof.
+  intros rows cols a b [Ha_len Ha_rows] [Hb_len Hb_rows].
+  split.
+  - rewrite seq_add_length.
+    + exact Ha_len.
+    + now rewrite Ha_len, Hb_len.
+  - apply seq_add_row_ok; try assumption.
+    now rewrite Ha_len, Hb_len.
+Qed.
+
+Lemma matrix_sum_ok :
+  forall rows cols ms,
+    Forall (matrix_ok rows cols) ms ->
+    matrix_ok rows cols (matrix_sum rows cols ms).
+Proof.
+  intros rows cols ms Hms.
+  induction Hms as [|m ms Hm Hms IH]; simpl.
+  - apply zero_matrix_ok.
+  - apply matrix_add_ok; assumption.
+Qed.
+
+Lemma Forall_firstn :
+  forall (A : Type) (P : A -> Prop) n xs,
+    Forall P xs ->
+    Forall P (firstn n xs).
+Proof.
+  intros A P n xs Hxs.
+  revert n.
+  induction Hxs as [|x xs Hx Hxs IH]; intros n; simpl.
+  - destruct n; constructor.
+  - destruct n as [|n'].
+    + constructor.
+    + constructor.
+      * exact Hx.
+      * apply IH.
+Qed.
+
+Lemma zip_output_head_examples_hidden_ok :
+  forall width hidden targets,
+    Forall (row_ok width) hidden ->
+    Forall (row_ok width)
+      (map example_hidden_state (zip_output_head_examples hidden targets)).
+Proof.
+  intros width hidden targets Hhidden.
+  revert targets.
+  induction Hhidden as [|h hidden' Hh Hhidden' IH]; intros targets; simpl.
+  - destruct targets; constructor.
+  - destruct targets as [|target targets'].
+    + constructor.
+    + constructor.
+      * exact Hh.
+      * exact (IH targets').
+Qed.
+
+Lemma output_head_examples_of_tokens_hidden_ok :
+  forall hp m tokens,
+    model_wf hp m ->
+    Forall (row_ok (hp_d_model hp))
+      (map example_hidden_state (output_head_examples_of_tokens hp m tokens)).
+Proof.
+  intros hp m tokens Hwf.
+  unfold output_head_examples_of_tokens.
+  apply zip_output_head_examples_hidden_ok.
+  apply Forall_firstn.
+  apply hidden_states_row_ok.
+  exact Hwf.
+Qed.
+
+Lemma output_head_examples_of_batch_hidden_ok :
+  forall hp m batch,
+    model_wf hp m ->
+    Forall (row_ok (hp_d_model hp))
+      (map example_hidden_state (output_head_examples_of_batch hp m batch)).
+Proof.
+  intros hp m batch Hwf.
+  induction batch as [|tokens batch' IH]; simpl.
+  - constructor.
+  - rewrite map_app.
+    apply Forall_app.
+    split.
+    + apply output_head_examples_of_tokens_hidden_ok.
+      exact Hwf.
+    + exact IH.
+Qed.
+
+Lemma scaled_rows_ok :
+  forall width factors hidden,
+    row_ok width hidden ->
+    Forall (row_ok width) (map (fun factor => vec_scale factor hidden) factors).
+Proof.
+  intros width factors hidden Hhidden.
+  induction factors as [|factor factors IH]; simpl.
+  - constructor.
+  - constructor.
+    + unfold row_ok in *.
+      now rewrite vec_scale_length, Hhidden.
+    + exact IH.
+Qed.
+
+Lemma output_head_logits_loss_for_example_nonnegative :
+  forall hp m ex,
+    0 <= output_head_logits_loss_for_example hp m ex.
+Proof.
+  intros hp m ex.
+  unfold output_head_logits_loss_for_example.
+  apply lm_mean_squared_error_nonnegative.
+Qed.
+
+Lemma output_head_logits_grad_for_example_ok :
+  forall hp m ex,
+    model_wf hp m ->
+    row_ok (hp_d_model hp) (example_hidden_state ex) ->
+    matrix_ok (hp_vocab hp) (hp_d_model hp)
+      (output_head_logits_grad_for_example hp m ex).
+Proof.
+  intros hp m ex Hwf Hhidden.
+  unfold output_head_logits_grad_for_example, output_head_row_factors.
+  assert (Hlogits : row_ok (hp_vocab hp) (logits_for_hidden m (example_hidden_state ex))).
+  {
+    unfold logits_for_hidden.
+    unfold model_wf in Hwf.
+    destruct Hwf as [_ [_ [_ [_ [_ [_ [_ Hout]]]]]]].
+    eapply mat_vec_mul_row_ok.
+    exact Hout.
+  }
+  assert (Htargets : row_ok (hp_vocab hp)
+    (one_hot_vector (hp_vocab hp) (example_next_token ex))).
+  {
+    apply one_hot_vector_row_ok.
+  }
+  assert (Hfactors : row_ok (hp_vocab hp)
+    (vec_scale (output_head_loss_factor hp)
+       (vec_sub (logits_for_hidden m (example_hidden_state ex))
+                (one_hot_vector (hp_vocab hp) (example_next_token ex))))).
+  {
+    unfold row_ok in *.
+    rewrite vec_scale_length.
+    apply vec_sub_row_ok; assumption.
+  }
+  split.
+  - unfold row_ok in Hfactors.
+    now rewrite length_map, Hfactors.
+  - apply scaled_rows_ok.
+    exact Hhidden.
+Qed.
+
+Lemma output_head_logits_grad_batch_ok :
+  forall hp m batch,
+    model_wf hp m ->
+    matrix_ok (hp_vocab hp) (hp_d_model hp)
+      (output_head_logits_grad_batch hp m batch).
+Proof.
+  intros hp m batch Hwf.
+  unfold output_head_logits_grad_batch.
+  remember (output_head_examples_of_batch hp m batch) as examples eqn:Hexamples.
+  assert (Hhidden :
+    Forall (row_ok (hp_d_model hp))
+      (map example_hidden_state examples)).
+  {
+    subst examples.
+    apply output_head_examples_of_batch_hidden_ok.
+    exact Hwf.
+  }
+  destruct examples as [|ex examples'].
+  - apply zero_matrix_ok.
+  - apply matrix_scale_ok.
+    apply matrix_sum_ok.
+    clear Hexamples.
+    inversion Hhidden as [|hidden' hidden'' Hh Hhidden'']; subst.
+    clear Hhidden.
+    constructor.
+    { eapply output_head_logits_grad_for_example_ok.
+      - exact Hwf.
+      - exact Hh. }
+    { revert Hhidden''.
+      induction examples' as [|ex_tail examples_tail IH]; intros Hhidden''; simpl.
+      - constructor.
+      - inversion Hhidden'' as [|hidden_tail hidden_tails Hh_tail Hhidden_tails]; subst.
+        constructor.
+        + eapply output_head_logits_grad_for_example_ok.
+          * exact Hwf.
+          * exact Hh_tail.
+        + apply IH.
+          exact Hhidden_tails. }
+Qed.
+
+Lemma model_with_output_projection_wf :
+  forall hp m out_proj,
+    model_wf hp m ->
+    matrix_ok (hp_vocab hp) (hp_d_model hp) out_proj ->
+    model_wf hp (model_with_output_projection m out_proj).
+Proof.
+  intros hp m out_proj Hwf Hout.
+  unfold model_wf in *.
+  destruct Hwf as [Hemb [Hq [Hk [Hv [Ho [H1 [H2 _]]]]]]].
+  simpl.
+  exact (conj Hemb
+    (conj Hq
+      (conj Hk
+        (conj Hv
+          (conj Ho
+            (conj H1
+              (conj H2 Hout))))))).
+Qed.
+
+Lemma apply_output_head_sgd_step_preserves_model_wf :
+  forall hp learning_rate m batch,
+    model_wf hp m ->
+    model_wf hp (apply_output_head_sgd_step learning_rate hp m batch).
+Proof.
+  intros hp learning_rate m batch Hwf.
+  unfold apply_output_head_sgd_step.
+  apply model_with_output_projection_wf.
+  - exact Hwf.
+  - apply matrix_add_ok.
+    + unfold model_wf in Hwf.
+      destruct Hwf as [_ [_ [_ [_ [_ [_ [_ Hout]]]]]]].
+      exact Hout.
+    + apply matrix_scale_ok.
+      apply output_head_logits_grad_batch_ok.
+      exact Hwf.
+Qed.
+
+Lemma train_output_head_sgd_preserves_model_wf :
+  forall fuel hp learning_rate m batch,
+    model_wf hp m ->
+    model_wf hp (train_output_head_sgd fuel learning_rate hp m batch).
+Proof.
+  induction fuel as [|fuel IH]; intros hp learning_rate m batch Hwf; simpl.
+  - exact Hwf.
+  - apply IH.
+    apply apply_output_head_sgd_step_preserves_model_wf.
+    exact Hwf.
+Qed.
+
 (** * Concrete demos. *)
 
 Definition demo1_hp : HyperParams :=
@@ -1676,6 +2142,66 @@ Proof.
   reflexivity.
 Qed.
 
+Definition demo2_formal_training_batch : Batch :=
+  [[0%nat; 1%nat];
+   [1%nat; 2%nat];
+   [2%nat; 0%nat]].
+
+Definition demo2_formal_training_prompt : list nat :=
+  [2%nat].
+
+Definition demo2_formal_learning_rate : Scalar :=
+  1 / 2.
+
+Definition demo2_formal_zero_model : Model :=
+  model_with_output_projection demo2_model
+    (zero_matrix (hp_vocab demo2_hp) (hp_d_model demo2_hp)).
+
+Definition demo2_formal_loss_0 : Scalar :=
+  output_head_logits_loss_batch
+    demo2_hp
+    demo2_formal_zero_model
+    demo2_formal_training_batch.
+
+Definition demo2_formal_prediction_0 : nat :=
+  predict_next demo2_hp demo2_formal_zero_model demo2_formal_training_prompt.
+
+Definition demo2_formal_model_4 : Model :=
+  train_output_head_sgd
+    4
+    demo2_formal_learning_rate
+    demo2_hp
+    demo2_formal_zero_model
+    demo2_formal_training_batch.
+
+Definition demo2_formal_loss_4 : Scalar :=
+  output_head_logits_loss_batch
+    demo2_hp
+    demo2_formal_model_4
+    demo2_formal_training_batch.
+
+Definition demo2_formal_prediction_4 : nat :=
+  predict_next demo2_hp demo2_formal_model_4 demo2_formal_training_prompt.
+
+Definition demo2_formal_generated_3 : list nat :=
+  greedy_generate 3 demo2_hp demo2_formal_model_4 demo2_formal_training_prompt.
+
+Lemma demo2_formal_zero_model_wf :
+  model_wf demo2_hp demo2_formal_zero_model.
+Proof.
+  apply model_with_output_projection_wf.
+  - apply demo2_model_wf.
+  - apply zero_matrix_ok.
+Qed.
+
+Lemma demo2_formal_model_4_wf :
+  model_wf demo2_hp demo2_formal_model_4.
+Proof.
+  unfold demo2_formal_model_4.
+  apply train_output_head_sgd_preserves_model_wf.
+  apply demo2_formal_zero_model_wf.
+Qed.
+
 (** Encoded rational outputs for the extracted executable.  Using explicit
     numerator/denominator pairs keeps the OCaml driver simple and avoids any
     dependence on the extracted internal representation of [Q]. *)
@@ -1701,6 +2227,9 @@ Definition demo1_batch_loss_encoded := encode_scalar demo1_batch_loss.
 Definition demo2_train_loss_encoded := encode_scalar demo2_train_loss.
 Definition demo2_train_grad_weights_encoded := encode_vector demo2_train_grad_weights.
 Definition demo2_train_grad_bias_encoded := encode_scalar demo2_train_grad_bias.
+
+Definition demo2_formal_loss_0_encoded := encode_scalar demo2_formal_loss_0.
+Definition demo2_formal_loss_4_encoded := encode_scalar demo2_formal_loss_4.
 
 (**
   * Extraction.
@@ -1737,4 +2266,10 @@ Extraction "microgpt_extracted.ml"
   demo3_prediction
   demo2_train_loss_encoded
   demo2_train_grad_weights_encoded
-  demo2_train_grad_bias_encoded.
+  demo2_train_grad_bias_encoded
+  demo2_formal_training_prompt
+  demo2_formal_prediction_0
+  demo2_formal_prediction_4
+  demo2_formal_generated_3
+  demo2_formal_loss_0_encoded
+  demo2_formal_loss_4_encoded.

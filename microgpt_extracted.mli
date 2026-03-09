@@ -18,6 +18,8 @@ val map : ('a1 -> 'a2) -> 'a1 list -> 'a2 list
 
 val repeat : 'a1 -> int -> 'a1 list
 
+val firstn : int -> 'a1 list -> 'a1 list
+
 val tl : 'a1 list -> 'a1 list
 
 val last : 'a1 list -> 'a1 -> 'a1
@@ -225,6 +227,49 @@ val readout_example_tape :
   hyperParams -> model -> int list -> vector -> scalar -> scalar ->
   readoutTape
 
+val zero_matrix : int -> int -> matrix
+
+val matrix_scale : scalar -> matrix -> matrix
+
+val vec_sub : vector -> vector -> vector
+
+val matrix_sum : int -> int -> matrix list -> matrix
+
+type outputHeadExample = { example_hidden_state : vector;
+                           example_next_token : int }
+
+val zip_output_head_examples :
+  vector list -> int list -> outputHeadExample list
+
+val output_head_examples_of_tokens :
+  hyperParams -> model -> int list -> outputHeadExample list
+
+val output_head_examples_of_batch :
+  hyperParams -> model -> batch -> outputHeadExample list
+
+val output_head_loss_factor : hyperParams -> scalar
+
+val output_head_logits_loss_for_example :
+  hyperParams -> model -> outputHeadExample -> scalar
+
+val output_head_row_factors :
+  hyperParams -> model -> outputHeadExample -> vector
+
+val output_head_logits_grad_for_example :
+  hyperParams -> model -> outputHeadExample -> matrix
+
+val output_head_logits_loss_batch : hyperParams -> model -> batch -> scalar
+
+val output_head_logits_grad_batch : hyperParams -> model -> batch -> matrix
+
+val model_with_output_projection : model -> matrix -> model
+
+val apply_output_head_sgd_step :
+  scalar -> hyperParams -> model -> batch -> model
+
+val train_output_head_sgd :
+  int -> scalar -> hyperParams -> model -> batch -> model
+
 val demo1_hp : hyperParams
 
 val demo1_model : model
@@ -279,6 +324,26 @@ val demo2_train_grad_weights : vector
 
 val demo2_train_grad_bias : scalar
 
+val demo2_formal_training_batch : batch
+
+val demo2_formal_training_prompt : int list
+
+val demo2_formal_learning_rate : scalar
+
+val demo2_formal_zero_model : model
+
+val demo2_formal_loss_0 : scalar
+
+val demo2_formal_prediction_0 : int
+
+val demo2_formal_model_4 : model
+
+val demo2_formal_loss_4 : scalar
+
+val demo2_formal_prediction_4 : int
+
+val demo2_formal_generated_3 : int list
+
 type encoded_scalar = int * int
 
 val encode_scalar : scalar -> encoded_scalar
@@ -302,3 +367,7 @@ val demo2_train_loss_encoded : encoded_scalar
 val demo2_train_grad_weights_encoded : encoded_scalar list
 
 val demo2_train_grad_bias_encoded : encoded_scalar
+
+val demo2_formal_loss_0_encoded : encoded_scalar
+
+val demo2_formal_loss_4_encoded : encoded_scalar

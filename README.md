@@ -28,6 +28,8 @@ Implemented pieces:
 - a linear readout head over the final hidden state
 - squared loss for the readout head
 - a reverse-mode backward pass for the readout head
+- a proved output-head SGD update over causal hidden states
+- a proved repeated output-head training loop inside the Rocq development
 - a frozen-body output-head training loop in the OCaml executable
 - deterministic and sampled generation paths in the OCaml executable
 
@@ -52,6 +54,8 @@ followed by explicit normalization by the prefix score sum. This keeps the atten
 - final hidden-state shape preservation
 - readout gradient shape preservation
 - explicit reverse-mode gradient formulas for the readout head
+- output-head gradient shape preservation over batches of causal hidden-state examples
+- output-head SGD preserves model well-formedness
 - concrete properties of the three demo models
 
 ## Demos
@@ -70,6 +74,7 @@ The executable also prints:
 - the encoded squared loss for the `demo2` readout example
 - the encoded reverse-mode gradients for the readout weights
 - the encoded reverse-mode gradient for the readout bias
+- a formal output-head training demo extracted from the Rocq development
 - a runtime training demo over a tiny token corpus
 - a before/after loss trace for a cold output head trained against extracted hidden states
 - before/after greedy continuations for the trained output head
@@ -81,6 +86,11 @@ The runtime trainer in `main.ml` intentionally keeps the transformer body fixed.
 It uses extracted hidden states from the Rocq model, optimizes only the output
 projection in the OCaml driver, and then converts the trained head back into
 small rational weights for extracted prediction and generation.
+
+The Rocq development now also contains a fully formalized output-head training
+surface. That formal path covers per-example logits loss, batch gradients,
+SGD updates, repeated output-head training steps, and model-shape preservation
+through those updates.
 
 ## Build
 
@@ -110,8 +120,8 @@ GitHub Actions runs the same pipeline on every push and pull request:
 Natural follow-on work includes:
 
 - extending reverse-mode differentiation from the readout head to the transformer core
-- replacing the current squared-loss output-head trainer with a proved end-to-end token-training objective
+- replacing the current squared-loss output-head trainer with a proved end-to-end token-training objective for the full transformer
 - introducing a more realistic floating-point or fixed-point numeric model inside the theorem-bearing core
 - proving stronger equivalences between optimized and reference implementations
-- moving more of the executable-side training workflow into the proved Rocq development
+- moving the remaining executable-side optimizer and data workflow into the proved Rocq development
 - targeting additional extracted runtimes, including Crane

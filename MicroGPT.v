@@ -2375,31 +2375,26 @@ Lemma mat_T_vec_mul_row_ok :
     row_ok rows grad ->
     row_ok width (mat_T_vec_mul width m grad).
 Proof.
-  intros rows width m grad Hm Hgrad.
-  revert m Hm.
-  induction grad as [|g grad IH]; intros m Hm.
-  - destruct m as [|row rows']; simpl in *.
-    + apply row_ok_zero_vec.
-    + destruct Hm as [Hlen _].
-      simpl in Hgrad.
-      rewrite <- Hgrad in Hlen.
+  intros rows width m.
+  revert rows.
+  induction m as [|row rows' IH]; intros rows grad Hm Hgrad.
+  - simpl.
+    apply row_ok_zero_vec.
+  - destruct Hm as [Hlen Hrows].
+    inversion Hrows as [|? ? Hrow Hrows_tail]; subst.
+    destruct grad as [|g grad']; simpl in *.
+    + rewrite <- Hlen in Hgrad.
       discriminate.
-  - destruct m as [|row rows']; simpl in *.
-    + destruct Hm as [Hlen _].
-      simpl in Hgrad.
-      rewrite <- Hlen in Hgrad.
-      discriminate.
-    + destruct Hm as [Hlen Hrows].
-      inversion Hrows as [|? ? Hrow Hrows']; subst.
-      simpl in Hgrad.
-      inversion Hgrad as [Hgrad'].
+    + rewrite <- Hlen in Hgrad.
+      inversion Hgrad as [Hgrad_tail].
       apply vec_add_row_ok.
       * unfold row_ok in *.
         now rewrite vec_scale_length, Hrow.
-      * apply IH.
-        split.
-        -- now inversion Hlen.
-        -- exact Hrows'.
+      * apply IH with (rows := length rows').
+        -- split.
+           ++ reflexivity.
+           ++ exact Hrows_tail.
+        -- exact Hgrad_tail.
 Qed.
 
 Lemma matrix_square_ok :

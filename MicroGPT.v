@@ -424,8 +424,6 @@ Definition normalize_vec
   then zero_vec width
   else vec_scale (/ denom) numerator.
 
-Arguments attend_numerator _ _ _ _ _ : simpl never.
-Arguments attend_denominator _ _ _ : simpl never.
 Arguments normalize_vec _ _ _ : simpl never.
 
 Definition attend
@@ -508,7 +506,6 @@ Definition causal_attention
   : list Vector :=
   causal_attention_aux width [] [] queries keys values.
 
-Arguments causal_attention_aux _ _ _ _ _ _ : simpl never.
 Arguments causal_attention _ _ _ _ : simpl never.
 
 Lemma causal_attention_aux_length :
@@ -1459,8 +1456,6 @@ Fixpoint sequence_token_losses (logits_seq : list Vector) (targets : list nat)
       :: sequence_token_losses logits_seq' targets'
   | _, _ => []
   end.
-
-Arguments sequence_token_losses _ _ : simpl never.
 
 Definition sequence_distribution_loss (logits_seq : list Vector) (targets : list nat)
   : Scalar :=
@@ -2439,8 +2434,6 @@ Fixpoint backprop_attend_aux
       |}
   end.
 
-Arguments backprop_attend_aux _ _ _ _ _ _ _ _ : simpl never.
-
 Definition backprop_attend
   (width : nat)
   (query : Vector)
@@ -2506,7 +2499,6 @@ Definition backprop_causal_attention
     values
     grad_outputs.
 
-Arguments backprop_causal_attention_aux _ _ _ _ _ _ _ _ _ : simpl never.
 Arguments backprop_causal_attention _ _ _ _ _ : simpl never.
 
 Lemma backprop_attend_aux_lengths :
@@ -4023,7 +4015,6 @@ Definition sequence_logits_loss_grad
         (sequence_logits_loss_grad_raw logits_seq targets)
   end.
 
-Arguments sequence_logits_loss_grad_raw _ _ : simpl never.
 Arguments sequence_logits_loss_grad _ _ : simpl never.
 
 Lemma sequence_logits_loss_grad_raw_length :
@@ -4169,8 +4160,6 @@ Fixpoint full_model_grad_batch_sum
         (full_model_grad_tokens hp m tokens)
         (full_model_grad_batch_sum hp m batch')
   end.
-
-Arguments full_model_grad_batch_sum _ _ _ : simpl never.
 
 Definition full_model_grad_batch
   (hp : HyperParams)
@@ -4470,8 +4459,6 @@ Fixpoint train_model_sgd
         batch
   end.
 
-Arguments train_model_sgd _ _ _ _ _ : simpl never.
-
 Record AdamState := {
   adam_model : Model;
   adam_moment_1 : ModelGrad;
@@ -4559,8 +4546,6 @@ Fixpoint train_model_adam
         (apply_model_adam_step learning_rate beta1 beta2 eps hp state batch)
         batch
   end.
-
-Arguments train_model_adam _ _ _ _ _ _ : simpl never.
 
 Lemma full_model_grad_tokens_wf :
   forall hp m tokens,

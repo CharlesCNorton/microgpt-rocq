@@ -1119,7 +1119,6 @@ Proof.
         exact (proj2 Hemb).
       * apply position_vector_row_ok.
     + apply IH.
-      exact Hwf.
 Qed.
 
 Lemma embed_tokens_with_positions_row_ok :

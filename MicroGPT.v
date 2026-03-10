@@ -921,11 +921,6 @@ Definition argmax (xs : Vector) : nat :=
   | x :: xs' => argmax_aux O x 1 xs'
   end.
 
-Definition predict_next (hp : HyperParams) (m : Model) (tokens : list nat) : nat :=
-  let logits := forward hp m tokens in
-  let final_logits := last logits (zero_vec (hp_vocab hp)) in
-  argmax (normalized_output_distribution final_logits).
-
 (** * Sequence-level language-model surface. *)
 
 Fixpoint sum_scalars (xs : list Scalar) : Scalar :=
@@ -963,6 +958,11 @@ Definition normalized_output_distribution (logits : Vector) : Vector :=
   if Qeq_bool denom 0
   then zero_vec (length logits)
   else map (fun score => score / denom) scores.
+
+Definition predict_next (hp : HyperParams) (m : Model) (tokens : list nat) : nat :=
+  let logits := forward hp m tokens in
+  let final_logits := last logits (zero_vec (hp_vocab hp)) in
+  argmax (normalized_output_distribution final_logits).
 
 Definition lm_square (x : Scalar) : Scalar :=
   x * x.

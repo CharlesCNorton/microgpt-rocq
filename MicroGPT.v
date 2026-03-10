@@ -2747,15 +2747,18 @@ Proof.
     destruct tail as [[query_rest key_rest] value_rest].
     cbn in *.
     split.
-    + now rewrite IHquery.
+    + simpl.
+      now rewrite IHquery.
     + split.
-      * rewrite IHkeys.
+      * simpl.
+        rewrite IHkeys.
         rewrite Hacc_keys_len'.
         subst seen_keys'.
         rewrite app_length.
         simpl.
         lia.
-      * rewrite IHvalues.
+      * simpl.
+        rewrite IHvalues.
         rewrite Hacc_vals_len'.
         subst seen_values'.
         rewrite app_length.

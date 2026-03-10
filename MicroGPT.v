@@ -3263,18 +3263,46 @@ Proof.
     remember (output_score logit + sum_scalars (output_scores logits')) as denom.
     destruct (Qeq_bool denom 0).
     + apply row_ok_zero_vec.
-    + unfold row_ok.
-      rewrite vec_hadamard_length.
-      * rewrite map_length.
-        reflexivity.
-      * rewrite map_length.
-        rewrite vec_scale_length.
-        rewrite vec_sub_length.
-        -- symmetry.
-           exact Hgp.
-        -- unfold const_vec.
-           rewrite repeat_length.
+    + remember
+        (vec_sub gp (const_vec (length gp) (dot gp probs))) as centered.
+      assert (Hcentered : row_ok (S (length logits')) centered).
+      {
+        subst centered.
+        apply vec_sub_row_ok.
+        - exact Hgp.
+        - unfold row_ok, const_vec.
+          rewrite repeat_length.
+          exact Hgp.
+      }
+      remember (vec_scale (/ denom) centered) as scaled.
+      assert (Hscaled : row_ok (S (length logits')) scaled).
+      {
+        subst scaled.
+        apply vec_scale_row_ok.
+        exact Hcentered.
+      }
+      change
+        (row_ok (S (length logits'))
+           match scaled with
+           | [] => []
+           | y :: ys =>
+               output_score_grad logit * y
+               :: vec_hadamard (map output_score_grad logits') ys
+           end).
+      destruct scaled as [|y ys].
+      * unfold row_ok in Hscaled.
+        discriminate.
+      * unfold row_ok in Hscaled.
+        simpl in Hscaled.
+        inversion Hscaled as [Hys].
+        simpl.
+        f_equal.
+        rewrite vec_hadamard_length.
+        -- rewrite map_length.
            reflexivity.
+        -- rewrite map_length.
+           symmetry.
+           exact Hys.
 Qed.
 
 Lemma sequence_logits_loss_grad_raw_row_ok :

@@ -2800,6 +2800,7 @@ Proof.
         Hvalues'
         Hgrads').
       destruct IH as [IHquery [IHkeys IHvalues]].
+      cbn.
       split.
       { constructor.
         - exact Hlocal_query.

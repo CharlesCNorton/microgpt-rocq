@@ -2748,12 +2748,10 @@ Proof.
     simpl in IHquery, IHkeys, IHvalues.
     simpl.
     split.
-    + now rewrite IHquery.
+    + lia.
     + split.
-      * rewrite IHkeys.
-        lia.
-      * rewrite IHvalues.
-        lia.
+      * lia.
+      * lia.
 Qed.
 
 Lemma backprop_causal_attention_lengths :

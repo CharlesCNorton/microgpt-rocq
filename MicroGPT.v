@@ -1296,25 +1296,67 @@ Definition mean_scalars (xs : list Scalar) : Scalar :=
   | _ => sum_scalars xs / q_of_nat (length xs)
   end.
 
-(** Output probabilities use a monotone exact score map rather than the older
-    squared-score trick.  Nonpositive logits are compressed through a positive
-    reciprocal branch, while positive logits remain linear.  This keeps every
-    score strictly positive without destroying order information by squaring. *)
-Definition output_score (logit : Scalar) : Scalar :=
-  if Qle_bool logit 0
-  then 1 / (1 - logit)
-  else 1 + logit.
+(** The language-model output surface now uses a max-shifted softmax shape.
+    Because the core scalar type is [Q], the exponential and logarithm are
+    implemented with explicit rational approximants so the development remains
+    executable after extraction. *)
+Fixpoint softmax_scalar_pow (x : Scalar) (n : nat) : Scalar :=
+  match n with
+  | O => 1
+  | S n' => x * softmax_scalar_pow x n'
+  end.
 
-Definition output_score_grad (logit : Scalar) : Scalar :=
-  if Qle_bool logit 0
-  then 1 / ((1 - logit) * (1 - logit))
-  else 1.
+Fixpoint softmax_factorial (n : nat) : nat :=
+  match n with
+  | O => 1
+  | S n' => S n' * softmax_factorial n'
+  end.
 
-Definition output_scores (logits : Vector) : Vector :=
-  map output_score logits.
+Fixpoint softmax_exp_series_from
+  (x : Scalar)
+  (next remaining : nat)
+  : Scalar :=
+  match remaining with
+  | O => 0
+  | S remaining' =>
+      softmax_scalar_pow x next / q_of_nat (softmax_factorial next) +
+      softmax_exp_series_from x (S next) remaining'
+  end.
+
+Definition softmax_exp_terms : nat := 8.
+
+Definition softmax_exp_nonnegative (x : Scalar) : Scalar :=
+  softmax_exp_series_from x 0 (S softmax_exp_terms).
+
+Definition softmax_exp (x : Scalar) : Scalar :=
+  if Qle_bool x 0
+  then / softmax_exp_nonnegative (- x)
+  else softmax_exp_nonnegative x.
+
+Fixpoint max_scalar_from (current : Scalar) (xs : Vector) : Scalar :=
+  match xs with
+  | [] => current
+  | x :: xs' =>
+      if Qle_bool current x
+      then max_scalar_from x xs'
+      else max_scalar_from current xs'
+  end.
+
+Definition max_scalar (xs : Vector) : Scalar :=
+  match xs with
+  | [] => 0
+  | x :: xs' => max_scalar_from x xs'
+  end.
+
+Definition shift_logits_by_max (logits : Vector) : Vector :=
+  let pivot := max_scalar logits in
+  map (fun logit => logit - pivot) logits.
+
+Definition softmax_scores (logits : Vector) : Vector :=
+  map softmax_exp (shift_logits_by_max logits).
 
 Definition normalized_output_distribution (logits : Vector) : Vector :=
-  let scores := output_scores logits in
+  let scores := softmax_scores logits in
   let denom := sum_scalars scores in
   if Qeq_bool denom 0
   then zero_vec (length logits)
@@ -1334,30 +1376,37 @@ Definition predict_next_with_positions
   let final_logits := last logits (zero_vec (hp_vocab hp)) in
   argmax (normalized_output_distribution final_logits).
 
-Definition lm_square (x : Scalar) : Scalar :=
-  x * x.
+Definition cross_entropy_probability_floor : Scalar := 1 / q_of_nat 1024.
 
-Definition lm_scalar_squared_loss (prediction target : Scalar) : Scalar :=
-  let diff := prediction - target in
-  lm_square diff.
+Definition clamp_probability (p : Scalar) : Scalar :=
+  if Qle_bool p 0
+  then cross_entropy_probability_floor
+  else if Qle_bool 1 p
+       then 1
+       else p.
 
-Fixpoint lm_squared_error_sum (preds targets : Vector) : Scalar :=
-  match preds, targets with
-  | pred :: preds', target :: targets' =>
-      lm_scalar_squared_loss pred target + lm_squared_error_sum preds' targets'
-  | _, _ => 0
+Fixpoint neg_log_one_minus_series_from
+  (y : Scalar)
+  (next remaining : nat)
+  : Scalar :=
+  match remaining with
+  | O => 0
+  | S remaining' =>
+      softmax_scalar_pow y next / q_of_nat next +
+      neg_log_one_minus_series_from y (S next) remaining'
   end.
 
-Definition lm_mean_squared_error (preds targets : Vector) : Scalar :=
-  match preds with
-  | [] => 0
-  | _ => lm_squared_error_sum preds targets / q_of_nat (length preds)
-  end.
+Definition cross_entropy_log_terms : nat := 16.
+
+Definition approx_neg_log (p : Scalar) : Scalar :=
+  let p' := clamp_probability p in
+  neg_log_one_minus_series_from (1 - p') 1 cross_entropy_log_terms.
+
+Definition target_token_probability (logits : Vector) (target : nat) : Scalar :=
+  lookup_row target (normalized_output_distribution logits) 0.
 
 Definition token_distribution_loss (logits : Vector) (target : nat) : Scalar :=
-  lm_mean_squared_error
-    (normalized_output_distribution logits)
-    (one_hot_vector (length logits) target).
+  approx_neg_log (target_token_probability logits target).
 
 Fixpoint sequence_token_losses (logits_seq : list Vector) (targets : list nat)
   : list Scalar :=
@@ -1421,106 +1470,16 @@ Proof.
   induction Hxs as [|x xs Hx Hxs IH]; simpl; lra.
 Qed.
 
-Lemma output_score_positive :
-  forall logit,
-    0 < output_score logit.
-Proof.
-  intros logit.
-  unfold output_score.
-  destruct (Qle_bool logit 0) eqn:Hle.
-  - apply Qle_bool_iff in Hle.
-    unfold Qdiv.
-    rewrite Qmult_1_l.
-    apply Qinv_lt_0_compat.
-    lra.
-  - assert (~ logit <= 0) as Hnle.
-    {
-      intro Hcontra.
-      pose proof (proj2 (Qle_bool_iff logit 0) Hcontra) as Htrue.
-      rewrite Htrue in Hle.
-      discriminate.
-    }
-    pose proof (Qnot_le_lt logit 0 Hnle) as Hgt.
-    lra.
-Qed.
-
-Lemma output_scores_row_ok :
-  forall logits,
-    row_ok (length logits) (output_scores logits).
-Proof.
-  intros logits.
-  unfold output_scores, row_ok.
-  now rewrite length_map.
-Qed.
-
 Lemma normalized_output_distribution_row_ok :
   forall logits,
     row_ok (length logits) (normalized_output_distribution logits).
 Proof.
   intros logits.
   unfold normalized_output_distribution.
-  destruct (Qeq_bool (sum_scalars (output_scores logits)) 0); simpl.
+  destruct (Qeq_bool (sum_scalars (softmax_scores logits)) 0); simpl.
   - apply row_ok_zero_vec.
-  - unfold row_ok, output_scores.
+  - unfold row_ok, softmax_scores, shift_logits_by_max.
     now rewrite !length_map.
-Qed.
-
-Lemma lm_scalar_squared_loss_nonnegative :
-  forall prediction target,
-    0 <= lm_scalar_squared_loss prediction target.
-Proof.
-  intros prediction target.
-  unfold lm_scalar_squared_loss, lm_square.
-  assert (0 <= (prediction - target) * (prediction - target)).
-  {
-    destruct (Qlt_le_dec (prediction - target) 0) as [Hneg|Hnonneg].
-    - setoid_replace ((prediction - target) * (prediction - target))
-        with ((- (prediction - target)) * (- (prediction - target))) by ring.
-      apply Qmult_le_0_compat; lra.
-    - apply Qmult_le_0_compat; lra.
-  }
-  assumption.
-Qed.
-
-Lemma lm_squared_error_sum_nonnegative :
-  forall preds targets,
-    0 <= lm_squared_error_sum preds targets.
-Proof.
-  induction preds as [|pred preds IH]; intros targets; simpl.
-  - lra.
-  - destruct targets as [|target targets']; simpl.
-    + lra.
-    + pose proof (lm_scalar_squared_loss_nonnegative pred target) as Hloss.
-      pose proof (IH targets') as Hrest.
-      lra.
-Qed.
-
-Lemma lm_mean_squared_error_nonnegative :
-  forall preds targets,
-    0 <= lm_mean_squared_error preds targets.
-Proof.
-  intros preds targets.
-  unfold lm_mean_squared_error.
-  destruct preds as [|pred preds']; simpl.
-  - lra.
-  - assert (0 <= lm_squared_error_sum (pred :: preds') targets).
-    { apply lm_squared_error_sum_nonnegative. }
-    assert (0 < q_of_nat (length (pred :: preds'))).
-    { apply q_of_nat_positive. }
-    apply Qmult_le_0_compat.
-    + exact H.
-    + apply Qlt_le_weak.
-      apply Qinv_lt_0_compat.
-      exact H0.
-Qed.
-
-Lemma token_distribution_loss_nonnegative :
-  forall logits target,
-    0 <= token_distribution_loss logits target.
-Proof.
-  intros logits target.
-  unfold token_distribution_loss.
-  apply lm_mean_squared_error_nonnegative.
 Qed.
 
 Lemma sequence_token_losses_length :
@@ -1828,8 +1787,7 @@ Definition output_head_logits_loss_for_example
   (ex : OutputHeadExample)
   : Scalar :=
   let logits := logits_for_hidden m (example_hidden_state ex) in
-  let targets := one_hot_vector (hp_vocab hp) (example_next_token ex) in
-  lm_mean_squared_error logits targets.
+  token_distribution_loss logits (example_next_token ex).
 
 Definition output_head_row_factors
   (hp : HyperParams)
@@ -1838,7 +1796,7 @@ Definition output_head_row_factors
   : Vector :=
   let logits := logits_for_hidden m (example_hidden_state ex) in
   let targets := one_hot_vector (hp_vocab hp) (example_next_token ex) in
-  vec_scale (output_head_loss_factor hp) (vec_sub logits targets).
+  vec_sub (normalized_output_distribution logits) targets.
 
 Definition output_head_logits_grad_for_example
   (hp : HyperParams)
@@ -2089,15 +2047,6 @@ Proof.
     + exact IH.
 Qed.
 
-Lemma output_head_logits_loss_for_example_nonnegative :
-  forall hp m ex,
-    0 <= output_head_logits_loss_for_example hp m ex.
-Proof.
-  intros hp m ex.
-  unfold output_head_logits_loss_for_example.
-  apply lm_mean_squared_error_nonnegative.
-Qed.
-
 Lemma output_head_logits_grad_for_example_ok :
   forall hp m ex,
     model_wf hp m ->
@@ -2121,13 +2070,16 @@ Proof.
     apply one_hot_vector_row_ok.
   }
   assert (Hfactors : row_ok (hp_vocab hp)
-    (vec_scale (output_head_loss_factor hp)
-       (vec_sub (logits_for_hidden m (example_hidden_state ex))
-                (one_hot_vector (hp_vocab hp) (example_next_token ex))))).
+    (vec_sub
+       (normalized_output_distribution
+          (logits_for_hidden m (example_hidden_state ex)))
+       (one_hot_vector (hp_vocab hp) (example_next_token ex)))).
   {
-    unfold row_ok in *.
-    rewrite vec_scale_length.
-    apply vec_sub_row_ok; assumption.
+    apply vec_sub_row_ok.
+    - unfold row_ok in Hlogits |- *.
+      rewrite <- Hlogits.
+      apply normalized_output_distribution_row_ok.
+    - exact Htargets.
   }
   split.
   - unfold row_ok in Hfactors.
@@ -3984,20 +3936,7 @@ Definition token_distribution_loss_grad
   : Vector :=
   let probs := normalized_output_distribution logits in
   let targets := one_hot_vector (length logits) target in
-  match logits with
-  | [] => []
-  | _ =>
-      let gp :=
-        vec_scale (2 / q_of_nat (length logits)) (vec_sub probs targets) in
-      let scores := output_scores logits in
-      let denom := sum_scalars scores in
-      if Qeq_bool denom 0
-      then zero_vec (length logits)
-      else
-        let centered := vec_sub gp (const_vec (length gp) (dot gp probs)) in
-        vec_hadamard (map output_score_grad logits)
-          (vec_scale (/ denom) centered)
-  end.
+  vec_sub probs targets.
 
 Fixpoint sequence_logits_loss_grad_raw
   (logits_seq : list Vector)
@@ -4179,45 +4118,9 @@ Lemma token_distribution_loss_grad_row_ok :
 Proof.
   intros logits target.
   unfold token_distribution_loss_grad.
-  destruct logits as [|logit logits'].
-  - reflexivity.
-  - cbn [one_hot_vector normalized_output_distribution output_scores sum_scalars
-         output_score output_score_grad vec_scale vec_sub zero_vec].
-    remember (normalized_output_distribution (logit :: logits')) as probs.
-    remember (one_hot_vector (S (length logits')) target) as targets.
-    remember
-      (vec_scale (2 / q_of_nat (S (length logits')))
-         (vec_sub probs targets)) as gp.
-    assert (Hprobs : row_ok (S (length logits')) probs).
-    {
-      subst probs.
-      apply normalized_output_distribution_row_ok.
-    }
-    assert (Htargets : row_ok (S (length logits')) targets).
-    {
-      subst targets.
-      apply one_hot_vector_row_ok.
-    }
-    subst targets.
-    assert (Hgp : row_ok (S (length logits')) gp).
-    {
-      subst gp.
-      apply vec_scale_row_ok.
-      apply vec_sub_row_ok; assumption.
-    }
-    subst gp.
-    remember (sum_scalars (output_scores (logit :: logits'))) as denom.
-    destruct (Qeq_bool denom 0).
-    + apply row_ok_zero_vec.
-    + apply vec_hadamard_row_ok.
-      * apply map_row_ok.
-        reflexivity.
-      * apply vec_scale_row_ok.
-        apply vec_sub_row_ok.
-        -- exact Hgp.
-        -- unfold row_ok, const_vec.
-           rewrite repeat_length.
-           exact Hgp.
+  apply vec_sub_row_ok.
+  - apply normalized_output_distribution_row_ok.
+  - apply one_hot_vector_row_ok.
 Qed.
 
 Lemma sequence_logits_loss_grad_raw_row_ok :

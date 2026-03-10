@@ -552,15 +552,43 @@ let examples_of_sequence hp model tokens =
 let examples_of_batch hp model batch =
   List.concat (List.map (examples_of_sequence hp model) batch)
 
+let softmax_probs_float ?(temperature = 1.0) logits =
+  if Array.length logits = 0 then
+    [||]
+  else
+    let scaled_logits =
+      if temperature = 0.0
+      then Array.copy logits
+      else Array.map (fun logit -> logit /. temperature) logits
+    in
+    let max_logit = Array.fold_left max Float.neg_infinity scaled_logits in
+    let exps = Array.map (fun logit -> exp (logit -. max_logit)) scaled_logits in
+    let denom = Array.fold_left ( +. ) 0.0 exps in
+    if denom = 0.0 then
+      Array.make (Array.length logits) 0.0
+    else
+      Array.map (fun value -> value /. denom) exps
+
+let cross_entropy_probability_floor_float = 1.0e-12
+
+let cross_entropy_from_probs_float probs target =
+  if Array.length probs = 0 then
+    0.0
+  else
+    let raw_probability =
+      if target < 0 || target >= Array.length probs then 0.0 else probs.(target)
+    in
+    let probability =
+      min 1.0 (max cross_entropy_probability_floor_float raw_probability)
+    in
+    -. log probability
+
+let cross_entropy_from_logits_float ?(temperature = 1.0) logits target =
+  cross_entropy_from_probs_float (softmax_probs_float ~temperature logits) target
+
 let output_head_logits_loss vocab out_proj example =
   let logits = float_logits out_proj example.example_hidden in
-  let target = one_hot_float vocab example.example_target in
-  let accum = ref 0.0 in
-  for index = 0 to vocab - 1 do
-    let diff = logits.(index) -. target.(index) in
-    accum := !accum +. (diff *. diff)
-  done;
-  !accum /. float_of_int vocab
+  cross_entropy_from_logits_float logits example.example_target
 
 let batch_output_head_loss vocab out_proj examples =
   match examples with
@@ -574,14 +602,14 @@ let batch_output_head_loss vocab out_proj examples =
 
 let batch_output_head_gradient hp out_proj examples =
   let grad = zero_float_matrix hp.M.hp_vocab hp.M.hp_d_model in
-  let scale = 2.0 /. float_of_int hp.M.hp_vocab in
   let example_count = max 1 (List.length examples) in
   List.iter
     (fun example ->
        let logits = float_logits out_proj example.example_hidden in
+       let probs = softmax_probs_float logits in
        let target = one_hot_float hp.M.hp_vocab example.example_target in
        for row = 0 to hp.M.hp_vocab - 1 do
-         let row_factor = scale *. (logits.(row) -. target.(row)) in
+         let row_factor = probs.(row) -. target.(row) in
          for col = 0 to hp.M.hp_d_model - 1 do
            grad.(row).(col) <- grad.(row).(col) +. (row_factor *. example.example_hidden.(col))
          done
@@ -775,24 +803,10 @@ let top_p_float_distribution cutoff probs =
   else
     List.map (fun (index, prob) -> (index, prob /. kept_mass)) kept
 
-let positive_score_float x =
-  if x <= 0.0
-  then 1.0 /. (1.0 -. x)
-  else 1.0 +. x
-
 let next_token_distribution_float ?(temperature = 1.0) ?(top_k = 0) ?(top_p = 1.0) hp body_model out_proj tokens =
   let hidden = float_vector_of_q_vector (M.last_hidden_state hp body_model tokens) in
   let logits = float_logits out_proj hidden in
-  let scaled_logits =
-    if temperature = 0.0
-    then logits
-    else Array.map (fun logit -> logit /. temperature) logits
-  in
-  let scores =
-    Array.map positive_score_float scaled_logits
-  in
-  let denom = Array.fold_left ( +. ) 0.0 scores in
-  let probs = Array.to_list (Array.map (fun score -> score /. denom) scores) in
+  let probs = Array.to_list (softmax_probs_float ~temperature logits) in
   if top_k > 0 then
     top_k_float_distribution top_k probs
   else if top_p < 1.0 then
@@ -1175,28 +1189,10 @@ let forward_model_float hp model tokens =
   |> List.map (float_mat_vec_mul model.fm_out_proj)
 
 let distribution_from_logits_float ?(temperature = 1.0) logits =
-  let scaled_logits =
-    if temperature = 0.0
-    then logits
-    else Array.map (fun logit -> logit /. temperature) logits
-  in
-  let scores = Array.map positive_score_float scaled_logits in
-  let denom = Array.fold_left ( +. ) 0.0 scores in
-  if denom = 0.0 then
-    Array.to_list (Array.make (Array.length logits) 0.0)
-  else
-    Array.to_list (Array.map (fun score -> score /. denom) scores)
+  Array.to_list (softmax_probs_float ~temperature logits)
 
 let token_distribution_loss_float logits target =
-  let probs = distribution_from_logits_float logits |> Array.of_list in
-  let one_hot = one_hot_float (Array.length probs) target in
-  let accum = ref 0.0 in
-  for index = 0 to Array.length probs - 1 do
-    let diff = probs.(index) -. one_hot.(index) in
-    accum := !accum +. (diff *. diff)
-  done;
-  if Array.length probs = 0 then 0.0
-  else !accum /. float_of_int (Array.length probs)
+  cross_entropy_from_logits_float logits target
 
 let next_token_distribution_model_float
     ?(temperature = 1.0)

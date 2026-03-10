@@ -14,6 +14,8 @@ type comparison =
 
 val add : int -> int -> int
 
+val mul : int -> int -> int
+
 module Nat :
  sig
  end
@@ -221,21 +223,41 @@ val sum_scalars : scalar list -> scalar
 
 val mean_scalars : scalar list -> scalar
 
-val output_score : scalar -> scalar
+val softmax_scalar_pow : scalar -> int -> scalar
 
-val output_score_grad : scalar -> scalar
+val softmax_factorial : int -> int
 
-val output_scores : vector -> vector
+val softmax_exp_series_from : scalar -> int -> int -> scalar
+
+val softmax_exp_terms : int
+
+val softmax_exp_nonnegative : scalar -> scalar
+
+val softmax_exp : scalar -> scalar
+
+val max_scalar_from : scalar -> vector -> scalar
+
+val max_scalar : vector -> scalar
+
+val shift_logits_by_max : vector -> vector
+
+val softmax_scores : vector -> vector
 
 val normalized_output_distribution : vector -> vector
 
 val predict_next : hyperParams -> model -> int list -> int
 
-val lm_square : scalar -> scalar
+val cross_entropy_probability_floor : scalar
 
-val lm_scalar_squared_loss : scalar -> scalar -> scalar
+val clamp_probability : scalar -> scalar
 
-val lm_squared_error_sum : vector -> vector -> scalar
+val neg_log_one_minus_series_from : scalar -> int -> int -> scalar
+
+val cross_entropy_log_terms : int
+
+val approx_neg_log : scalar -> scalar
+
+val target_token_probability : vector -> int -> scalar
 
 val token_distribution_loss : vector -> int -> scalar
 
@@ -296,11 +318,6 @@ val output_head_examples_of_tokens :
 val output_head_examples_of_batch :
   hyperParams -> model -> batch -> outputHeadExample list
 
-val output_head_loss_factor : hyperParams -> scalar
-
-val output_head_logits_loss_for_example :
-  hyperParams -> model -> outputHeadExample -> scalar
-
 val output_head_row_factors :
   hyperParams -> model -> outputHeadExample -> vector
 
@@ -318,8 +335,6 @@ val apply_output_head_sgd_step :
 
 val train_output_head_sgd :
   int -> scalar -> hyperParams -> model -> batch -> model
-
-val const_vec : int -> scalar -> vector
 
 val zero_sequence : int -> int -> vector list
 

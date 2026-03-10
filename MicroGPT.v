@@ -2710,6 +2710,21 @@ Proof.
           simpl in Hlocal_keys_len.
           exact Hlocal_keys_len.
       }
+      assert (Hacc_keys'_len :
+        length
+          (seq_add (attend_back_keys local) (acc_key_grads ++ [zero_vec width])) =
+        length seen_keys').
+      {
+        rewrite seq_add_length.
+        - exact Hlocal_keys_len.
+        - rewrite app_length.
+          simpl.
+          rewrite Hacc_keys_len.
+          subst seen_keys'.
+          rewrite app_length in Hlocal_keys_len.
+          simpl in Hlocal_keys_len.
+          exact Hlocal_keys_len.
+      }
       assert (Hacc_vals'_ok :
         Forall (row_ok width)
           (seq_add (attend_back_values local) (acc_value_grads ++ [zero_vec width]))).
@@ -2717,6 +2732,21 @@ Proof.
         apply seq_add_row_ok.
         - exact Hlocal_values.
         - exact Hacc_vals_app.
+        - rewrite app_length.
+          simpl.
+          rewrite Hacc_vals_len.
+          subst seen_values'.
+          rewrite app_length in Hlocal_values_len.
+          simpl in Hlocal_values_len.
+          exact Hlocal_values_len.
+      }
+      assert (Hacc_vals'_len :
+        length
+          (seq_add (attend_back_values local) (acc_value_grads ++ [zero_vec width])) =
+        length seen_values').
+      {
+        rewrite seq_add_length.
+        - exact Hlocal_values_len.
         - rewrite app_length.
           simpl.
           rewrite Hacc_vals_len.
@@ -2758,8 +2788,8 @@ Proof.
         keys values grad_outputs').
       specialize (IH
         Hseen_len'
-        Hlocal_keys_len
-        Hlocal_values_len).
+        Hacc_keys'_len
+        Hacc_vals'_len).
       specialize (IH
         Hseen_keys'
         Hseen_values'

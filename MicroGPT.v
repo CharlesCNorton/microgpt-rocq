@@ -998,9 +998,13 @@ Proof.
   induction xs as [|x xs IH]; intros best_idx best_val next_idx Hbest; simpl.
   - lia.
   - destruct (Qle_bool best_val x) eqn:Hcmp.
-    + apply IH.
+    + specialize (IH next_idx x (S next_idx)).
+      assert ((next_idx < S next_idx)%nat) as Hnext by lia.
+      specialize (IH Hnext).
       lia.
-    + apply IH.
+    + specialize (IH best_idx best_val (S next_idx)).
+      assert ((best_idx < S next_idx)%nat) as Hnext by lia.
+      specialize (IH Hnext).
       lia.
 Qed.
 

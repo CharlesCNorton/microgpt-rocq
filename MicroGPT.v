@@ -2745,7 +2745,9 @@ Proof.
         values
         grad_outputs')
       as [[query_rest key_rest] value_rest] eqn:Hrest.
-    cbn [fst snd] in IHquery, IHkeys, IHvalues |- *.
+    cbn [fst snd] in IHquery, IHkeys, IHvalues.
+    rewrite Hrest.
+    cbn [fst snd].
     split.
     + now rewrite IHquery.
     + split.

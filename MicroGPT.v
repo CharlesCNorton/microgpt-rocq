@@ -3263,13 +3263,29 @@ Proof.
     remember (output_score logit + sum_scalars (output_scores logits')) as denom.
     destruct (Qeq_bool denom 0).
     + apply row_ok_zero_vec.
-    + apply vec_hadamard_row_ok.
-      * apply map_row_ok.
-        reflexivity.
-      * apply vec_scale_row_ok.
+    + remember
+        (vec_scale (/ denom)
+           (vec_sub gp (const_vec (length gp) (dot gp probs)))) as scaled.
+      assert (Hscaled : row_ok (S (length logits')) scaled).
+      {
+        subst scaled.
+        apply vec_scale_row_ok.
         apply vec_sub_row_ok.
-        -- exact Hgp.
-        -- apply row_ok_const_vec.
+        - exact Hgp.
+        - apply row_ok_const_vec.
+      }
+      destruct scaled as [|y ys].
+      * unfold row_ok in Hscaled.
+        discriminate.
+      * simpl.
+        unfold row_ok in Hscaled.
+        simpl in Hscaled.
+        inversion Hscaled as [Hys].
+        f_equal.
+        apply vec_hadamard_row_ok.
+        -- apply map_row_ok.
+           reflexivity.
+        -- exact Hys.
 Qed.
 
 Lemma sequence_logits_loss_grad_raw_row_ok :

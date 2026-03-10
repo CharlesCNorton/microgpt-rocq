@@ -7,48 +7,51 @@ on:
 jobs:
   build:
     runs-on: ubuntu-24.04
-    container:
-      image: rocq/rocq-prover:9.0-native-ocaml-4.14
-      options: --user 0:0
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Prove and extract
-        shell: bash
-        run: |
-          set -eux
-          coqc MicroGPT.v
-
-      - name: Build OCaml executable
-        shell: bash
-        run: |
-          set -eux
-          ocamlopt -c microgpt_extracted.mli
-          ocamlopt -c microgpt_extracted.ml
-          ocamlopt -c main.ml
-          ocamlopt microgpt_extracted.cmx main.cmx -o microgpt_demo
-
-      - name: Run executable
-        shell: bash
-        run: |
-          set -eux
-          ./microgpt_demo data/demo_corpus.txt | tee demo_output.txt
-          grep -q '^demo1$' demo_output.txt
-          grep -q '^formal_train_demo$' demo_output.txt
-          grep -q '^formal_full_model_demo$' demo_output.txt
-          grep -q '^  initial_prediction=' demo_output.txt
-          grep -q '^  sgd_prediction_1=' demo_output.txt
-          grep -q '^  sgd_top_k=' demo_output.txt
-          grep -q '^  sgd_top_p=' demo_output.txt
-          grep -q '^  adam_prediction_2=' demo_output.txt
-          grep -q '^runtime_train_demo$' demo_output.txt
-          grep -q '^  corpus_source=\"data/demo_corpus.txt\"' demo_output.txt
-          grep -q '^  initial_runtime_loss=' demo_output.txt
-          grep -q '^  final_runtime_loss=' demo_output.txt
-          grep -q '^  initial_top_p=' demo_output.txt
-          grep -q '^  final_top_p=' demo_output.txt
-          initial=$(grep '^  initial_runtime_loss=' demo_output.txt | cut -d= -f2)
-          final=$(grep '^  final_runtime_loss=' demo_output.txt | cut -d= -f2)
-          awk -v initial="$initial" -v final="$final" 'BEGIN { exit !(final < initial) }'
+      - name: Prove, build, and run in Rocq image
+        uses: coq-community/docker-coq-action@v1
+        with:
+          coq_version: '9.0'
+          ocaml_version: 'default'
+          before_install: ''
+          install: ''
+          after_install: ''
+          before_script: |
+            startGroup "Fix workspace permissions"
+              sudo chown -R 1000:1000 .
+            endGroup
+          script: |
+            startGroup "Prove and extract"
+              coqc MicroGPT.v
+            endGroup
+            startGroup "Build OCaml executable"
+              ocamlopt -c microgpt_extracted.mli
+              ocamlopt -c microgpt_extracted.ml
+              ocamlopt -c main.ml
+              ocamlopt microgpt_extracted.cmx main.cmx -o microgpt_demo
+            endGroup
+            startGroup "Run executable"
+              ./microgpt_demo data/demo_corpus.txt | tee demo_output.txt
+              grep -q '^demo1$' demo_output.txt
+              grep -q '^formal_train_demo$' demo_output.txt
+              grep -q '^formal_full_model_demo$' demo_output.txt
+              grep -q '^  initial_prediction=' demo_output.txt
+              grep -q '^  sgd_prediction_1=' demo_output.txt
+              grep -q '^  sgd_top_k=' demo_output.txt
+              grep -q '^  sgd_top_p=' demo_output.txt
+              grep -q '^  adam_prediction_2=' demo_output.txt
+              grep -q '^runtime_train_demo$' demo_output.txt
+              grep -q '^  corpus_source=\"data/demo_corpus.txt\"' demo_output.txt
+              grep -q '^  initial_runtime_loss=' demo_output.txt
+              grep -q '^  final_runtime_loss=' demo_output.txt
+              grep -q '^  initial_top_p=' demo_output.txt
+              grep -q '^  final_top_p=' demo_output.txt
+              initial=$(grep '^  initial_runtime_loss=' demo_output.txt | cut -d= -f2)
+              final=$(grep '^  final_runtime_loss=' demo_output.txt | cut -d= -f2)
+              awk -v initial="$initial" -v final="$final" 'BEGIN { exit !(final < initial) }'
+            endGroup
+          uninstall: ''

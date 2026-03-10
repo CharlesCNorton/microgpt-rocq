@@ -3679,6 +3679,305 @@ Definition build_transformer_tape
     tape_logits_full := logits
   |}.
 
+Lemma build_transformer_tape_lengths :
+  forall hp m tokens,
+    model_wf hp m ->
+    let tape := build_transformer_tape hp m tokens in
+    length (tape_embed tape) = length tokens /\
+    length (tape_queries_full tape) = length tokens /\
+    length (tape_keys_full tape) = length tokens /\
+    length (tape_values_full tape) = length tokens /\
+    length (tape_attended_full tape) = length tokens /\
+    length (tape_mixed_full tape) = length tokens /\
+    length (tape_resid1_full tape) = length tokens /\
+    length (tape_ff_pre1_full tape) = length tokens /\
+    length (tape_ff_hidden_full tape) = length tokens /\
+    length (tape_ff_out_full tape) = length tokens /\
+    length (tape_hidden1_full tape) = length tokens /\
+    length (tape_logits_full tape) = length tokens.
+Proof.
+  intros hp m tokens Hwf.
+  unfold build_transformer_tape.
+  set (embed := embed_tokens hp m tokens).
+  set (queries := project_all (model_w_q m) embed).
+  set (keys := project_all (model_w_k m) embed).
+  set (values := project_all (model_w_v m) embed).
+  set (attended := causal_attention (hp_d_model hp) queries keys values).
+  set (mixed := project_all (model_w_o m) attended).
+  set (resid1 := seq_add embed mixed).
+  set (ff_pre1 := map (mat_vec_mul (model_w_1 m)) resid1).
+  set (ff_hidden := map (map relu) ff_pre1).
+  set (ff_out := map (mat_vec_mul (model_w_2 m)) ff_hidden).
+  set (hidden1 := seq_add resid1 ff_out).
+  set (logits := map (logits_for_hidden m) hidden1).
+  assert (Hembed_len : length embed = length tokens).
+  {
+    subst embed.
+    apply embed_tokens_length.
+  }
+  assert (Hqueries_len : length queries = length tokens).
+  {
+    subst queries.
+    rewrite project_all_length.
+    exact Hembed_len.
+  }
+  assert (Hkeys_len : length keys = length tokens).
+  {
+    subst keys.
+    rewrite project_all_length.
+    exact Hembed_len.
+  }
+  assert (Hvalues_len : length values = length tokens).
+  {
+    subst values.
+    rewrite project_all_length.
+    exact Hembed_len.
+  }
+  assert (Hattended_len : length attended = length tokens).
+  {
+    subst attended.
+    assert (Hca :
+      length (causal_attention (hp_d_model hp) queries keys values) =
+      length queries).
+    {
+      apply causal_attention_length.
+      - now rewrite Hqueries_len, Hkeys_len.
+      - now rewrite Hkeys_len, Hvalues_len.
+    }
+    rewrite Hca.
+    exact Hqueries_len.
+  }
+  assert (Hmixed_len : length mixed = length tokens).
+  {
+    subst mixed.
+    rewrite project_all_length.
+    exact Hattended_len.
+  }
+  assert (Hresid1_len : length resid1 = length tokens).
+  {
+    subst resid1.
+    rewrite seq_add_length.
+    - exact Hembed_len.
+    - now rewrite Hembed_len, Hmixed_len.
+  }
+  assert (Hff_pre1_len : length ff_pre1 = length tokens).
+  {
+    subst ff_pre1.
+    rewrite length_map.
+    exact Hresid1_len.
+  }
+  assert (Hff_hidden_len : length ff_hidden = length tokens).
+  {
+    subst ff_hidden.
+    rewrite length_map.
+    exact Hff_pre1_len.
+  }
+  assert (Hff_out_len : length ff_out = length tokens).
+  {
+    subst ff_out.
+    rewrite length_map.
+    exact Hff_hidden_len.
+  }
+  assert (Hhidden1_len : length hidden1 = length tokens).
+  {
+    subst hidden1.
+    rewrite seq_add_length.
+    - exact Hresid1_len.
+    - now rewrite Hresid1_len, Hff_out_len.
+  }
+  assert (Hlogits_len : length logits = length tokens).
+  {
+    subst logits.
+    rewrite length_map.
+    exact Hhidden1_len.
+  }
+  repeat split; assumption.
+Qed.
+
+Lemma build_transformer_tape_row_ok :
+  forall hp m tokens,
+    model_wf hp m ->
+    let tape := build_transformer_tape hp m tokens in
+    Forall (row_ok (hp_d_model hp)) (tape_embed tape) /\
+    Forall (row_ok (hp_d_model hp)) (tape_queries_full tape) /\
+    Forall (row_ok (hp_d_model hp)) (tape_keys_full tape) /\
+    Forall (row_ok (hp_d_model hp)) (tape_values_full tape) /\
+    Forall (row_ok (hp_d_model hp)) (tape_attended_full tape) /\
+    Forall (row_ok (hp_d_model hp)) (tape_mixed_full tape) /\
+    Forall (row_ok (hp_d_model hp)) (tape_resid1_full tape) /\
+    Forall (row_ok (hp_d_hidden hp)) (tape_ff_pre1_full tape) /\
+    Forall (row_ok (hp_d_hidden hp)) (tape_ff_hidden_full tape) /\
+    Forall (row_ok (hp_d_model hp)) (tape_ff_out_full tape) /\
+    Forall (row_ok (hp_d_model hp)) (tape_hidden1_full tape) /\
+    Forall (row_ok (hp_vocab hp)) (tape_logits_full tape).
+Proof.
+  intros hp m tokens Hwf.
+  unfold build_transformer_tape.
+  set (embed := embed_tokens hp m tokens).
+  set (queries := project_all (model_w_q m) embed).
+  set (keys := project_all (model_w_k m) embed).
+  set (values := project_all (model_w_v m) embed).
+  set (attended := causal_attention (hp_d_model hp) queries keys values).
+  set (mixed := project_all (model_w_o m) attended).
+  set (resid1 := seq_add embed mixed).
+  set (ff_pre1 := map (mat_vec_mul (model_w_1 m)) resid1).
+  set (ff_hidden := map (map relu) ff_pre1).
+  set (ff_out := map (mat_vec_mul (model_w_2 m)) ff_hidden).
+  set (hidden1 := seq_add resid1 ff_out).
+  set (logits := map (logits_for_hidden m) hidden1).
+  destruct Hwf as [Hemb [Hwq [Hwk [Hwv [Hwo [Hw1 [Hw2 Hout]]]]]]].
+  assert (Hembed_ok : Forall (row_ok (hp_d_model hp)) embed).
+  {
+    subst embed.
+    apply embed_tokens_row_ok.
+    exact
+      (conj Hemb
+        (conj Hwq
+          (conj Hwk
+            (conj Hwv
+              (conj Hwo
+                (conj Hw1
+                  (conj Hw2 Hout))))))).
+  }
+  assert (Hqueries_ok : Forall (row_ok (hp_d_model hp)) queries).
+  {
+    subst queries.
+    eapply project_all_row_ok; eauto.
+  }
+  assert (Hkeys_ok : Forall (row_ok (hp_d_model hp)) keys).
+  {
+    subst keys.
+    eapply project_all_row_ok; eauto.
+  }
+  assert (Hvalues_ok : Forall (row_ok (hp_d_model hp)) values).
+  {
+    subst values.
+    eapply project_all_row_ok; eauto.
+  }
+  assert (Hattended_ok : Forall (row_ok (hp_d_model hp)) attended).
+  {
+    subst attended.
+    apply causal_attention_row_ok.
+    exact Hvalues_ok.
+  }
+  assert (Hmixed_ok : Forall (row_ok (hp_d_model hp)) mixed).
+  {
+    subst mixed.
+    eapply project_all_row_ok; eauto.
+  }
+  assert (Hembed_len : length embed = length tokens).
+  {
+    subst embed.
+    apply embed_tokens_length.
+  }
+  assert (Hmixed_len : length mixed = length tokens).
+  {
+    subst mixed.
+    rewrite project_all_length.
+    assert (Hattended_len :
+      length (causal_attention (hp_d_model hp) queries keys values) =
+      length tokens).
+    {
+      assert (Hca :
+        length (causal_attention (hp_d_model hp) queries keys values) =
+        length queries).
+      {
+        apply causal_attention_length.
+        - subst queries keys.
+          rewrite !project_all_length.
+          reflexivity.
+        - subst keys values.
+          rewrite !project_all_length.
+          reflexivity.
+      }
+      rewrite Hca.
+      subst queries.
+      rewrite project_all_length.
+      exact Hembed_len.
+    }
+    exact Hattended_len.
+  }
+  assert (Hresid1_len : length resid1 = length tokens).
+  {
+    subst resid1.
+    rewrite seq_add_length.
+    - exact Hembed_len.
+    - now rewrite Hembed_len, Hmixed_len.
+  }
+  assert (Hff_pre1_len : length ff_pre1 = length tokens).
+  {
+    subst ff_pre1.
+    rewrite length_map.
+    exact Hresid1_len.
+  }
+  assert (Hff_hidden_len : length ff_hidden = length tokens).
+  {
+    subst ff_hidden.
+    rewrite length_map.
+    exact Hff_pre1_len.
+  }
+  assert (Hff_out_len : length ff_out = length tokens).
+  {
+    subst ff_out.
+    rewrite length_map.
+    exact Hff_hidden_len.
+  }
+  assert (Hresid1_ok : Forall (row_ok (hp_d_model hp)) resid1).
+  {
+    subst resid1.
+    apply seq_add_row_ok.
+    - exact Hembed_ok.
+    - exact Hmixed_ok.
+    - now rewrite Hembed_len, Hmixed_len.
+  }
+  assert (Hff_pre1_ok : Forall (row_ok (hp_d_hidden hp)) ff_pre1).
+  {
+    subst ff_pre1.
+    unfold project_all.
+    eapply project_all_row_ok; eauto.
+  }
+  assert (Hff_hidden_ok : Forall (row_ok (hp_d_hidden hp)) ff_hidden).
+  {
+    assert (Hmap_relu_rows :
+      forall xs,
+        Forall (row_ok (hp_d_hidden hp)) xs ->
+        Forall (row_ok (hp_d_hidden hp)) (map (map relu) xs)).
+    {
+      intros xs Hxs.
+      induction Hxs as [|row rows Hrow Hrows IH]; simpl.
+      - constructor.
+      - constructor.
+        + apply map_row_ok.
+          exact Hrow.
+        + exact IH.
+    }
+    subst ff_hidden.
+    apply Hmap_relu_rows.
+    exact Hff_pre1_ok.
+  }
+  assert (Hff_out_ok : Forall (row_ok (hp_d_model hp)) ff_out).
+  {
+    subst ff_out.
+    unfold project_all.
+    eapply project_all_row_ok; eauto.
+  }
+  assert (Hhidden1_ok : Forall (row_ok (hp_d_model hp)) hidden1).
+  {
+    subst hidden1.
+    apply seq_add_row_ok.
+    - exact Hresid1_ok.
+    - exact Hff_out_ok.
+    - now rewrite Hresid1_len, Hff_out_len.
+  }
+  assert (Hlogits_ok : Forall (row_ok (hp_vocab hp)) logits).
+  {
+    subst logits.
+    unfold project_all.
+    eapply project_all_row_ok; eauto.
+  }
+  repeat split; assumption.
+Qed.
+
 Definition token_distribution_loss_grad
   (logits : Vector)
   (target : nat)
@@ -4274,6 +4573,794 @@ Fixpoint train_model_adam
         (apply_model_adam_step learning_rate beta1 beta2 eps hp state batch)
         batch
   end.
+
+Lemma full_model_grad_tokens_wf :
+  forall hp m tokens,
+    model_wf hp m ->
+    model_grad_wf hp (full_model_grad_tokens hp m tokens).
+Proof.
+  intros hp m tokens Hwf.
+  unfold full_model_grad_tokens, full_model_grad_from_tape.
+  set (tape := build_transformer_tape hp m tokens).
+  set (targets := next_token_targets (tape_tokens_full tape)).
+  assert (Htape_len :
+    length (tape_embed tape) = length tokens /\
+    length (tape_queries_full tape) = length tokens /\
+    length (tape_keys_full tape) = length tokens /\
+    length (tape_values_full tape) = length tokens /\
+    length (tape_attended_full tape) = length tokens /\
+    length (tape_mixed_full tape) = length tokens /\
+    length (tape_resid1_full tape) = length tokens /\
+    length (tape_ff_pre1_full tape) = length tokens /\
+    length (tape_ff_hidden_full tape) = length tokens /\
+    length (tape_ff_out_full tape) = length tokens /\
+    length (tape_hidden1_full tape) = length tokens /\
+    length (tape_logits_full tape) = length tokens).
+  {
+    subst tape.
+    apply build_transformer_tape_lengths.
+    exact Hwf.
+  }
+  assert (Htape_ok :
+    Forall (row_ok (hp_d_model hp)) (tape_embed tape) /\
+    Forall (row_ok (hp_d_model hp)) (tape_queries_full tape) /\
+    Forall (row_ok (hp_d_model hp)) (tape_keys_full tape) /\
+    Forall (row_ok (hp_d_model hp)) (tape_values_full tape) /\
+    Forall (row_ok (hp_d_model hp)) (tape_attended_full tape) /\
+    Forall (row_ok (hp_d_model hp)) (tape_mixed_full tape) /\
+    Forall (row_ok (hp_d_model hp)) (tape_resid1_full tape) /\
+    Forall (row_ok (hp_d_hidden hp)) (tape_ff_pre1_full tape) /\
+    Forall (row_ok (hp_d_hidden hp)) (tape_ff_hidden_full tape) /\
+    Forall (row_ok (hp_d_model hp)) (tape_ff_out_full tape) /\
+    Forall (row_ok (hp_d_model hp)) (tape_hidden1_full tape) /\
+    Forall (row_ok (hp_vocab hp)) (tape_logits_full tape)).
+  {
+    subst tape.
+    apply build_transformer_tape_row_ok.
+    exact Hwf.
+  }
+  destruct Hwf as [Hemb [Hwq [Hwk [Hwv [Hwo [Hw1 [Hw2 Hout]]]]]]].
+  destruct Htape_len as
+    [Hembed_len [Hqueries_len [Hkeys_len [Hvalues_len [Hattended_len
+    [Hmixed_len [Hresid1_len [Hff_pre1_len [Hff_hidden_len [Hff_out_len
+    [Hhidden1_len Hlogits_len]]]]]]]]]]].
+  destruct Htape_ok as
+    [Hembed_ok [Hqueries_ok [Hkeys_ok [Hvalues_ok [Hattended_ok [Hmixed_ok
+    [Hresid1_ok [Hff_pre1_ok [Hff_hidden_ok [Hff_out_ok [Hhidden1_ok
+    Hlogits_ok]]]]]]]]]]].
+  assert (Htargets_len_le : (length targets <= length tokens)%nat).
+  {
+    subst targets tape.
+    apply next_token_targets_length.
+  }
+  set (grad_logits :=
+    sequence_logits_loss_grad
+      (firstn (length targets) (tape_logits_full tape))
+      targets).
+  assert (Hgrad_logits_ok :
+    Forall (row_ok (hp_vocab hp)) grad_logits).
+  {
+    subst grad_logits.
+    apply sequence_logits_loss_grad_row_ok.
+    apply Forall_firstn.
+    exact Hlogits_ok.
+  }
+  assert (Hgrad_logits_len : length grad_logits = length targets).
+  {
+    subst grad_logits.
+    rewrite sequence_logits_loss_grad_length.
+    rewrite length_firstn, Hlogits_len.
+    replace (Nat.min (length targets) (length tokens)) with (length targets).
+    - rewrite Nat.min_id.
+      reflexivity.
+    - symmetry.
+      apply Nat.min_l.
+      exact Htargets_len_le.
+  }
+  destruct
+    (seq_of_matrix_backprops
+      (hp_d_model hp)
+      (model_out_proj m)
+      (firstn (length grad_logits) (tape_hidden1_full tape))
+      grad_logits)
+    as [grad_out_proj grad_hidden1_prefix] eqn:Hback_out.
+  assert (Hgrad_out :
+    matrix_ok (hp_vocab hp) (hp_d_model hp) grad_out_proj /\
+    Forall (row_ok (hp_d_model hp)) grad_hidden1_prefix).
+  {
+    pose proof
+      (seq_of_matrix_backprops_ok
+        (hp_vocab hp)
+        (hp_d_model hp)
+        (model_out_proj m)
+        (firstn (length grad_logits) (tape_hidden1_full tape))
+        grad_logits
+        Hout
+        (Forall_firstn _ _ _ _ Hhidden1_ok)
+        Hgrad_logits_ok)
+      as Htmp.
+    rewrite Hback_out in Htmp.
+    simpl in Htmp.
+    exact Htmp.
+  }
+  destruct Hgrad_out as [Hgrad_out_proj_ok Hgrad_hidden1_ok].
+  assert (Hgrad_hidden1_len :
+    length grad_hidden1_prefix = length grad_logits).
+  {
+    replace grad_hidden1_prefix with
+      (snd
+        (seq_of_matrix_backprops
+          (hp_d_model hp)
+          (model_out_proj m)
+          (firstn (length grad_logits) (tape_hidden1_full tape))
+          grad_logits)).
+    2:{
+      rewrite Hback_out.
+      reflexivity.
+    }
+    rewrite seq_of_matrix_backprops_input_grads_length.
+    rewrite length_firstn, Hhidden1_len, Hgrad_logits_len.
+    replace (Nat.min (length targets) (length tokens)) with (length targets).
+    - rewrite Nat.min_id.
+      reflexivity.
+    - symmetry.
+      apply Nat.min_l.
+      exact Htargets_len_le.
+  }
+  destruct
+    (backprop_feed_forward_sequence
+      (hp_d_model hp)
+      (hp_d_hidden hp)
+      (model_w_1 m)
+      (model_w_2 m)
+      (firstn (length grad_hidden1_prefix) (tape_resid1_full tape))
+      grad_hidden1_prefix)
+    as [[grad_w1 grad_w2] grad_resid1_from_ff] eqn:Hback_ff.
+  assert (Hback_ff_ok :
+    matrix_ok (hp_d_hidden hp) (hp_d_model hp) grad_w1 /\
+    matrix_ok (hp_d_model hp) (hp_d_hidden hp) grad_w2 /\
+    Forall (row_ok (hp_d_model hp)) grad_resid1_from_ff).
+  {
+    eapply backprop_feed_forward_sequence_ok.
+    - exact Hw1.
+    - exact Hw2.
+    - apply Forall_firstn.
+      exact Hresid1_ok.
+    - exact Hgrad_hidden1_ok.
+    - exact Hback_ff.
+  }
+  destruct Hback_ff_ok as [Hgrad_w1_ok [Hgrad_w2_ok Hgrad_resid1_from_ff_ok]].
+  assert (Hgrad_resid1_from_ff_len :
+    length grad_resid1_from_ff = length grad_hidden1_prefix).
+  {
+    replace grad_resid1_from_ff with
+      (snd
+        (backprop_feed_forward_sequence
+          (hp_d_model hp)
+          (hp_d_hidden hp)
+          (model_w_1 m)
+          (model_w_2 m)
+          (firstn (length grad_hidden1_prefix) (tape_resid1_full tape))
+          grad_hidden1_prefix)).
+    2:{
+      rewrite Hback_ff.
+      reflexivity.
+    }
+    rewrite backprop_feed_forward_sequence_input_grads_length.
+    rewrite length_firstn, Hresid1_len, Hgrad_hidden1_len, Hgrad_logits_len.
+    replace (Nat.min (length targets) (length tokens)) with (length targets).
+    - rewrite Nat.min_id.
+      reflexivity.
+    - symmetry.
+      apply Nat.min_l.
+      exact Htargets_len_le.
+  }
+  assert (Hgrad_resid1_ok :
+    Forall (row_ok (hp_d_model hp))
+      (seq_add grad_hidden1_prefix grad_resid1_from_ff)).
+  {
+    apply seq_add_row_ok.
+    - exact Hgrad_hidden1_ok.
+    - exact Hgrad_resid1_from_ff_ok.
+    - now rewrite Hgrad_hidden1_len, Hgrad_resid1_from_ff_len.
+  }
+  destruct
+    (seq_of_matrix_backprops
+      (hp_d_model hp)
+      (model_w_o m)
+      (firstn (length (seq_add grad_hidden1_prefix grad_resid1_from_ff))
+        (tape_attended_full tape))
+      (seq_add grad_hidden1_prefix grad_resid1_from_ff))
+    as [grad_w_o grad_attended] eqn:Hback_o.
+  assert (Hback_o_ok :
+    matrix_ok (hp_d_model hp) (hp_d_model hp) grad_w_o /\
+    Forall (row_ok (hp_d_model hp)) grad_attended).
+  {
+    pose proof
+      (seq_of_matrix_backprops_ok
+        (hp_d_model hp)
+        (hp_d_model hp)
+        (model_w_o m)
+        (firstn (length (seq_add grad_hidden1_prefix grad_resid1_from_ff))
+          (tape_attended_full tape))
+        (seq_add grad_hidden1_prefix grad_resid1_from_ff)
+        Hwo
+        (Forall_firstn _ _ _ _ Hattended_ok)
+        Hgrad_resid1_ok)
+      as Htmp.
+    rewrite Hback_o in Htmp.
+    simpl in Htmp.
+    exact Htmp.
+  }
+  destruct Hback_o_ok as [Hgrad_w_o_ok Hgrad_attended_ok].
+  assert (Hgrad_attended_len :
+    length grad_attended = length grad_logits).
+  {
+    replace grad_attended with
+      (snd
+        (seq_of_matrix_backprops
+          (hp_d_model hp)
+          (model_w_o m)
+          (firstn (length (seq_add grad_hidden1_prefix grad_resid1_from_ff))
+            (tape_attended_full tape))
+          (seq_add grad_hidden1_prefix grad_resid1_from_ff))).
+    2:{
+      rewrite Hback_o.
+      reflexivity.
+    }
+    rewrite seq_of_matrix_backprops_input_grads_length.
+    rewrite length_firstn, Hattended_len.
+    rewrite seq_add_length.
+    - rewrite Hgrad_hidden1_len, Hgrad_logits_len.
+      replace (Nat.min (length targets) (length tokens)) with (length targets).
+      + rewrite Nat.min_id.
+        reflexivity.
+      + symmetry.
+        apply Nat.min_l.
+        exact Htargets_len_le.
+    - rewrite Hgrad_resid1_from_ff_len.
+      reflexivity.
+  }
+  destruct
+    (backprop_causal_attention
+      (hp_d_model hp)
+      (firstn (length grad_attended) (tape_queries_full tape))
+      (firstn (length grad_attended) (tape_keys_full tape))
+      (firstn (length grad_attended) (tape_values_full tape))
+      grad_attended)
+    as [[grad_queries grad_keys] grad_values] eqn:Hback_attn.
+  assert (Hback_attn_ok :
+    Forall (row_ok (hp_d_model hp)) grad_queries /\
+    Forall (row_ok (hp_d_model hp)) grad_keys /\
+    Forall (row_ok (hp_d_model hp)) grad_values).
+  {
+    pose proof
+      (backprop_causal_attention_ok
+        (hp_d_model hp)
+        (firstn (length grad_attended) (tape_queries_full tape))
+        (firstn (length grad_attended) (tape_keys_full tape))
+        (firstn (length grad_attended) (tape_values_full tape))
+        grad_attended
+        (Forall_firstn _ _ _ _ Hqueries_ok)
+        (Forall_firstn _ _ _ _ Hkeys_ok)
+        (Forall_firstn _ _ _ _ Hvalues_ok)
+        Hgrad_attended_ok)
+      as Htmp.
+    rewrite Hback_attn in Htmp.
+    simpl in Htmp.
+    exact Htmp.
+  }
+  destruct Hback_attn_ok as [Hgrad_queries_ok [Hgrad_keys_ok Hgrad_values_ok]].
+  assert (Hback_attn_len :
+    length grad_queries = length grad_attended /\
+    length grad_keys = length grad_attended /\
+    length grad_values = length grad_attended).
+  {
+    assert (Hqueries_prefix_len :
+      length (firstn (length grad_attended) (tape_queries_full tape)) =
+      length grad_attended).
+    {
+      rewrite length_firstn, Hqueries_len, Hgrad_attended_len, Hgrad_logits_len.
+      apply Nat.min_l.
+      exact Htargets_len_le.
+    }
+    assert (Hkeys_prefix_len :
+      length (firstn (length grad_attended) (tape_keys_full tape)) =
+      length grad_attended).
+    {
+      rewrite length_firstn, Hkeys_len, Hgrad_attended_len, Hgrad_logits_len.
+      apply Nat.min_l.
+      exact Htargets_len_le.
+    }
+    assert (Hvalues_prefix_len :
+      length (firstn (length grad_attended) (tape_values_full tape)) =
+      length grad_attended).
+    {
+      rewrite length_firstn, Hvalues_len, Hgrad_attended_len, Hgrad_logits_len.
+      apply Nat.min_l.
+      exact Htargets_len_le.
+    }
+    assert (Hgrad_queries_len_raw :
+      length grad_queries =
+      length (firstn (length grad_attended) (tape_queries_full tape))).
+    {
+      replace grad_queries with
+        (fst
+          (fst
+            (backprop_causal_attention
+              (hp_d_model hp)
+              (firstn (length grad_attended) (tape_queries_full tape))
+              (firstn (length grad_attended) (tape_keys_full tape))
+              (firstn (length grad_attended) (tape_values_full tape))
+              grad_attended))).
+      2:{
+        rewrite Hback_attn.
+        reflexivity.
+      }
+      pose proof
+        (backprop_causal_attention_lengths
+          (hp_d_model hp)
+          (firstn (length grad_attended) (tape_queries_full tape))
+          (firstn (length grad_attended) (tape_keys_full tape))
+          (firstn (length grad_attended) (tape_values_full tape))
+          grad_attended
+          (eq_trans Hqueries_prefix_len (eq_sym Hkeys_prefix_len))
+          (eq_trans Hkeys_prefix_len (eq_sym Hvalues_prefix_len))
+          Hvalues_prefix_len)
+        as Htmp.
+      exact (proj1 Htmp).
+    }
+    assert (Hgrad_keys_len_raw :
+      length grad_keys =
+      length (firstn (length grad_attended) (tape_keys_full tape))).
+    {
+      replace grad_keys with
+        (snd
+          (fst
+            (backprop_causal_attention
+              (hp_d_model hp)
+              (firstn (length grad_attended) (tape_queries_full tape))
+              (firstn (length grad_attended) (tape_keys_full tape))
+              (firstn (length grad_attended) (tape_values_full tape))
+              grad_attended))).
+      2:{
+        rewrite Hback_attn.
+        reflexivity.
+      }
+      pose proof
+        (backprop_causal_attention_lengths
+          (hp_d_model hp)
+          (firstn (length grad_attended) (tape_queries_full tape))
+          (firstn (length grad_attended) (tape_keys_full tape))
+          (firstn (length grad_attended) (tape_values_full tape))
+          grad_attended
+          (eq_trans Hqueries_prefix_len (eq_sym Hkeys_prefix_len))
+          (eq_trans Hkeys_prefix_len (eq_sym Hvalues_prefix_len))
+          Hvalues_prefix_len)
+        as Htmp.
+      exact (proj1 (proj2 Htmp)).
+    }
+    assert (Hgrad_values_len_raw :
+      length grad_values =
+      length (firstn (length grad_attended) (tape_values_full tape))).
+    {
+      replace grad_values with
+        (snd
+          (backprop_causal_attention
+            (hp_d_model hp)
+            (firstn (length grad_attended) (tape_queries_full tape))
+            (firstn (length grad_attended) (tape_keys_full tape))
+            (firstn (length grad_attended) (tape_values_full tape))
+            grad_attended)).
+      2:{
+        rewrite Hback_attn.
+        reflexivity.
+      }
+      pose proof
+        (backprop_causal_attention_lengths
+          (hp_d_model hp)
+          (firstn (length grad_attended) (tape_queries_full tape))
+          (firstn (length grad_attended) (tape_keys_full tape))
+          (firstn (length grad_attended) (tape_values_full tape))
+          grad_attended
+          (eq_trans Hqueries_prefix_len (eq_sym Hkeys_prefix_len))
+          (eq_trans Hkeys_prefix_len (eq_sym Hvalues_prefix_len))
+          Hvalues_prefix_len)
+        as Htmp.
+      exact (proj2 (proj2 Htmp)).
+    }
+    rewrite Hqueries_prefix_len in Hgrad_queries_len_raw.
+    rewrite Hkeys_prefix_len in Hgrad_keys_len_raw.
+    rewrite Hvalues_prefix_len in Hgrad_values_len_raw.
+    exact (conj Hgrad_queries_len_raw (conj Hgrad_keys_len_raw Hgrad_values_len_raw)).
+  }
+  destruct Hback_attn_len as [Hgrad_queries_len [Hgrad_keys_len Hgrad_values_len]].
+  destruct
+    (seq_of_matrix_backprops
+      (hp_d_model hp)
+      (model_w_q m)
+      (firstn (length grad_queries) (tape_embed tape))
+      grad_queries)
+    as [grad_w_q grad_embed_from_q] eqn:Hback_q.
+  assert (Hback_q_ok :
+    matrix_ok (hp_d_model hp) (hp_d_model hp) grad_w_q /\
+    Forall (row_ok (hp_d_model hp)) grad_embed_from_q).
+  {
+    pose proof
+      (seq_of_matrix_backprops_ok
+        (hp_d_model hp)
+        (hp_d_model hp)
+        (model_w_q m)
+        (firstn (length grad_queries) (tape_embed tape))
+        grad_queries
+        Hwq
+        (Forall_firstn _ _ _ _ Hembed_ok)
+        Hgrad_queries_ok)
+      as Htmp.
+    rewrite Hback_q in Htmp.
+    simpl in Htmp.
+    exact Htmp.
+  }
+  destruct Hback_q_ok as [Hgrad_w_q_ok Hgrad_embed_from_q_ok].
+  assert (Hgrad_embed_from_q_len :
+    length grad_embed_from_q = length grad_queries).
+  {
+    replace grad_embed_from_q with
+      (snd
+        (seq_of_matrix_backprops
+          (hp_d_model hp)
+          (model_w_q m)
+          (firstn (length grad_queries) (tape_embed tape))
+          grad_queries)).
+    2:{
+      rewrite Hback_q.
+      reflexivity.
+    }
+    rewrite seq_of_matrix_backprops_input_grads_length.
+    rewrite length_firstn, Hembed_len, Hgrad_queries_len, Hgrad_attended_len, Hgrad_logits_len.
+    replace (Nat.min (length targets) (length tokens)) with (length targets).
+    - rewrite Nat.min_id.
+      reflexivity.
+    - symmetry.
+      apply Nat.min_l.
+      exact Htargets_len_le.
+  }
+  destruct
+    (seq_of_matrix_backprops
+      (hp_d_model hp)
+      (model_w_k m)
+      (firstn (length grad_keys) (tape_embed tape))
+      grad_keys)
+    as [grad_w_k grad_embed_from_k] eqn:Hback_k.
+  assert (Hback_k_ok :
+    matrix_ok (hp_d_model hp) (hp_d_model hp) grad_w_k /\
+    Forall (row_ok (hp_d_model hp)) grad_embed_from_k).
+  {
+    pose proof
+      (seq_of_matrix_backprops_ok
+        (hp_d_model hp)
+        (hp_d_model hp)
+        (model_w_k m)
+        (firstn (length grad_keys) (tape_embed tape))
+        grad_keys
+        Hwk
+        (Forall_firstn _ _ _ _ Hembed_ok)
+        Hgrad_keys_ok)
+      as Htmp.
+    rewrite Hback_k in Htmp.
+    simpl in Htmp.
+    exact Htmp.
+  }
+  destruct Hback_k_ok as [Hgrad_w_k_ok Hgrad_embed_from_k_ok].
+  assert (Hgrad_embed_from_k_len :
+    length grad_embed_from_k = length grad_keys).
+  {
+    replace grad_embed_from_k with
+      (snd
+        (seq_of_matrix_backprops
+          (hp_d_model hp)
+          (model_w_k m)
+          (firstn (length grad_keys) (tape_embed tape))
+          grad_keys)).
+    2:{
+      rewrite Hback_k.
+      reflexivity.
+    }
+    rewrite seq_of_matrix_backprops_input_grads_length.
+    rewrite length_firstn, Hembed_len, Hgrad_keys_len, Hgrad_attended_len, Hgrad_logits_len.
+    replace (Nat.min (length targets) (length tokens)) with (length targets).
+    - rewrite Nat.min_id.
+      reflexivity.
+    - symmetry.
+      apply Nat.min_l.
+      exact Htargets_len_le.
+  }
+  destruct
+    (seq_of_matrix_backprops
+      (hp_d_model hp)
+      (model_w_v m)
+      (firstn (length grad_values) (tape_embed tape))
+      grad_values)
+    as [grad_w_v grad_embed_from_v] eqn:Hback_v.
+  assert (Hback_v_ok :
+    matrix_ok (hp_d_model hp) (hp_d_model hp) grad_w_v /\
+    Forall (row_ok (hp_d_model hp)) grad_embed_from_v).
+  {
+    pose proof
+      (seq_of_matrix_backprops_ok
+        (hp_d_model hp)
+        (hp_d_model hp)
+        (model_w_v m)
+        (firstn (length grad_values) (tape_embed tape))
+        grad_values
+        Hwv
+        (Forall_firstn _ _ _ _ Hembed_ok)
+        Hgrad_values_ok)
+      as Htmp.
+    rewrite Hback_v in Htmp.
+    simpl in Htmp.
+    exact Htmp.
+  }
+  destruct Hback_v_ok as [Hgrad_w_v_ok Hgrad_embed_from_v_ok].
+  assert (Hgrad_embed_from_v_len :
+    length grad_embed_from_v = length grad_values).
+  {
+    replace grad_embed_from_v with
+      (snd
+        (seq_of_matrix_backprops
+          (hp_d_model hp)
+          (model_w_v m)
+          (firstn (length grad_values) (tape_embed tape))
+          grad_values)).
+    2:{
+      rewrite Hback_v.
+      reflexivity.
+    }
+    rewrite seq_of_matrix_backprops_input_grads_length.
+    rewrite length_firstn, Hembed_len, Hgrad_values_len, Hgrad_attended_len, Hgrad_logits_len.
+    replace (Nat.min (length targets) (length tokens)) with (length targets).
+    - rewrite Nat.min_id.
+      reflexivity.
+    - symmetry.
+      apply Nat.min_l.
+      exact Htargets_len_le.
+  }
+  assert (Hembed_from_qkv_ok :
+    Forall (row_ok (hp_d_model hp))
+      (seq_add grad_embed_from_q (seq_add grad_embed_from_k grad_embed_from_v))).
+  {
+    apply seq_add_row_ok.
+    - exact Hgrad_embed_from_q_ok.
+    - apply seq_add_row_ok.
+      + exact Hgrad_embed_from_k_ok.
+      + exact Hgrad_embed_from_v_ok.
+      + now rewrite Hgrad_embed_from_k_len, Hgrad_embed_from_v_len,
+          Hgrad_keys_len, Hgrad_values_len.
+    - rewrite Hgrad_embed_from_q_len.
+      rewrite seq_add_length.
+      + now rewrite Hgrad_embed_from_k_len,
+          Hgrad_queries_len, Hgrad_keys_len.
+      + now rewrite Hgrad_embed_from_k_len, Hgrad_embed_from_v_len,
+          Hgrad_keys_len, Hgrad_values_len.
+  }
+  assert (Hgrad_embed_inputs_ok :
+    Forall (row_ok (hp_d_model hp))
+      (seq_add
+        (seq_add grad_hidden1_prefix grad_resid1_from_ff)
+        (seq_add grad_embed_from_q (seq_add grad_embed_from_k grad_embed_from_v)))).
+  {
+    apply seq_add_row_ok.
+    - exact Hgrad_resid1_ok.
+    - exact Hembed_from_qkv_ok.
+    - assert (Hgrad_embed_resid_len :
+          length (seq_add grad_hidden1_prefix grad_resid1_from_ff) =
+          length grad_logits).
+      {
+        rewrite seq_add_length.
+        - rewrite Hgrad_hidden1_len.
+          reflexivity.
+        - symmetry.
+          exact Hgrad_resid1_from_ff_len.
+      }
+      assert (Hembed_from_qkv_len :
+          length
+            (seq_add grad_embed_from_q
+              (seq_add grad_embed_from_k grad_embed_from_v)) =
+          length grad_logits).
+      {
+        rewrite seq_add_length.
+        - rewrite Hgrad_embed_from_q_len, Hgrad_queries_len, Hgrad_attended_len.
+          reflexivity.
+        - rewrite Hgrad_embed_from_q_len.
+          rewrite seq_add_length.
+          + rewrite Hgrad_embed_from_k_len, Hgrad_queries_len, Hgrad_keys_len.
+            reflexivity.
+          + rewrite Hgrad_embed_from_k_len, Hgrad_embed_from_v_len,
+              Hgrad_keys_len, Hgrad_values_len.
+            reflexivity.
+      }
+      rewrite Hgrad_embed_resid_len, Hembed_from_qkv_len.
+      reflexivity.
+  }
+  assert (Hgrad_embeddings_ok :
+    matrix_ok (hp_vocab hp) (hp_d_model hp)
+      (embedding_grads_from_inputs
+        (hp_vocab hp)
+        (hp_d_model hp)
+        (firstn
+          (length
+            (seq_add
+              (seq_add grad_hidden1_prefix grad_resid1_from_ff)
+              (seq_add grad_embed_from_q
+                (seq_add grad_embed_from_k grad_embed_from_v))))
+          (tape_tokens_full tape))
+        (seq_add
+          (seq_add grad_hidden1_prefix grad_resid1_from_ff)
+          (seq_add grad_embed_from_q (seq_add grad_embed_from_k grad_embed_from_v))))).
+  {
+    apply embedding_grads_from_inputs_ok.
+    exact Hgrad_embed_inputs_ok.
+  }
+  unfold model_grad_wf.
+  split.
+  - exact Hgrad_embeddings_ok.
+  - split.
+    + exact Hgrad_w_q_ok.
+    + split.
+      * exact Hgrad_w_k_ok.
+      * split.
+        { exact Hgrad_w_v_ok. }
+        split.
+        { exact Hgrad_w_o_ok. }
+        split.
+        { exact Hgrad_w1_ok. }
+        split.
+        { exact Hgrad_w2_ok. }
+        exact Hgrad_out_proj_ok.
+Qed.
+
+Lemma full_model_grad_batch_wf :
+  forall hp m batch,
+    model_wf hp m ->
+    model_grad_wf hp (full_model_grad_batch hp m batch).
+Proof.
+  intros hp m batch Hwf.
+  unfold full_model_grad_batch.
+  destruct batch as [|tokens batch'].
+  - apply model_grad_wf_zero.
+  - apply model_grad_wf_scale.
+    induction (tokens :: batch') as [|tokens' batch'' IH]; simpl.
+    + apply model_grad_wf_zero.
+    + apply model_grad_wf_add.
+      * apply full_model_grad_tokens_wf.
+        exact Hwf.
+      * exact IH.
+Qed.
+
+Lemma apply_model_sgd_step_preserves_model_wf :
+  forall learning_rate hp m batch,
+    model_wf hp m ->
+    model_wf hp (apply_model_sgd_step learning_rate hp m batch).
+Proof.
+  intros learning_rate hp m batch Hwf.
+  unfold apply_model_sgd_step.
+  apply model_apply_grad_preserves_wf.
+  - exact Hwf.
+  - apply model_grad_wf_scale.
+    apply normalize_model_grad_wf.
+    apply full_model_grad_batch_wf.
+    exact Hwf.
+Qed.
+
+Lemma train_model_sgd_preserves_model_wf :
+  forall fuel learning_rate hp m batch,
+    model_wf hp m ->
+    model_wf hp (train_model_sgd fuel learning_rate hp m batch).
+Proof.
+  induction fuel as [|fuel IH]; intros learning_rate hp m batch Hwf; simpl.
+  - exact Hwf.
+  - apply IH.
+    apply apply_model_sgd_step_preserves_model_wf.
+    exact Hwf.
+Qed.
+
+Lemma apply_model_adam_step_preserves_adam_state_wf :
+  forall learning_rate beta1 beta2 eps hp state batch,
+    adam_state_wf hp state ->
+    adam_state_wf hp
+      (apply_model_adam_step learning_rate beta1 beta2 eps hp state batch).
+Proof.
+  intros learning_rate beta1 beta2 eps hp state batch
+    [Hmodel_wf [Hmoment1_wf Hmoment2_wf]].
+  unfold apply_model_adam_step.
+  set (grad := full_model_grad_batch hp (adam_model state) batch).
+  assert (Hgrad_wf : model_grad_wf hp grad).
+  {
+    subst grad.
+    apply full_model_grad_batch_wf.
+    exact Hmodel_wf.
+  }
+  set (moment_1 :=
+    model_grad_add
+      (model_grad_scale beta1 (adam_moment_1 state))
+      (model_grad_scale (1 - beta1) grad)).
+  set (moment_2 :=
+    model_grad_add
+      (model_grad_scale beta2 (adam_moment_2 state))
+      (model_grad_scale (1 - beta2) (model_grad_square grad))).
+  assert (Hmoment_1_wf : model_grad_wf hp moment_1).
+  {
+    subst moment_1.
+    apply model_grad_wf_add.
+    - apply model_grad_wf_scale.
+      exact Hmoment1_wf.
+    - apply model_grad_wf_scale.
+      exact Hgrad_wf.
+  }
+  assert (Hmoment_2_wf : model_grad_wf hp moment_2).
+  {
+    subst moment_2.
+    apply model_grad_wf_add.
+    - apply model_grad_wf_scale.
+      exact Hmoment2_wf.
+    - apply model_grad_wf_scale.
+      apply model_grad_wf_square.
+      exact Hgrad_wf.
+  }
+  set (corr1 := adam_bias_correction beta1 (adam_steps state)).
+  set (corr2 := adam_bias_correction beta2 (adam_steps state)).
+  set (moment_1_hat :=
+    if Qeq_bool corr1 0 then moment_1 else model_grad_scale (/ corr1) moment_1).
+  set (moment_2_hat :=
+    if Qeq_bool corr2 0 then moment_2 else model_grad_scale (/ corr2) moment_2).
+  assert (Hmoment_1_hat_wf : model_grad_wf hp moment_1_hat).
+  {
+    subst moment_1_hat.
+    destruct (Qeq_bool corr1 0); auto using model_grad_wf_scale.
+  }
+  assert (Hmoment_2_hat_wf : model_grad_wf hp moment_2_hat).
+  {
+    subst moment_2_hat.
+    destruct (Qeq_bool corr2 0); auto using model_grad_wf_scale.
+  }
+  set (denom := model_grad_add_eps eps (model_grad_sqrt_floor moment_2_hat)).
+  assert (Hdenom_wf : model_grad_wf hp denom).
+  {
+    subst denom.
+    apply model_grad_wf_add_eps.
+    apply model_grad_wf_sqrt_floor.
+    exact Hmoment_2_hat_wf.
+  }
+  set (step_grad := normalize_model_grad (model_grad_div_safe moment_1_hat denom)).
+  assert (Hstep_grad_wf : model_grad_wf hp step_grad).
+  {
+    subst step_grad.
+    apply normalize_model_grad_wf.
+    apply model_grad_wf_div_safe; assumption.
+  }
+  unfold adam_state_wf.
+  split.
+  - apply model_apply_grad_preserves_wf.
+    + exact Hmodel_wf.
+    + apply model_grad_wf_scale.
+      exact Hstep_grad_wf.
+  - split.
+    + exact Hmoment_1_wf.
+    + exact Hmoment_2_wf.
+Qed.
+
+Lemma train_model_adam_preserves_adam_state_wf :
+  forall fuel learning_rate beta1 beta2 eps hp state batch,
+    adam_state_wf hp state ->
+    adam_state_wf hp
+      (train_model_adam fuel learning_rate beta1 beta2 eps hp state batch).
+Proof.
+  induction fuel as [|fuel IH]; intros learning_rate beta1 beta2 eps hp state batch Hwf; simpl.
+  - exact Hwf.
+  - apply IH.
+    apply apply_model_adam_step_preserves_adam_state_wf.
+    exact Hwf.
+Qed.
 
 (** * Formal tokenization and decoding surfaces. *)
 

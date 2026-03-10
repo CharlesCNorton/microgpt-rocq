@@ -2387,7 +2387,19 @@ Proof.
   - reflexivity.
   - destruct grads_out as [|grad_out grads_out']; simpl.
     + reflexivity.
-    + now rewrite IH.
+    + destruct (backprop_feed_forward_sequence d_model d_hidden w1 w2 inputs grads_out') as
+        [[w1_rest w2_rest] input_rest] eqn:Hrest.
+      simpl.
+      assert
+        (Hlen :
+           length input_rest =
+           Nat.min (length inputs) (length grads_out')).
+      {
+        rewrite <- IH.
+        rewrite Hrest.
+        reflexivity.
+      }
+      now rewrite Hlen.
 Qed.
 
 Record AttendBackprop := {
@@ -2721,6 +2733,20 @@ Proof.
       Hkv'
       Hvg').
     destruct IH as [IHquery [IHkeys IHvalues]].
+    destruct
+      (backprop_causal_attention_aux
+        width
+        seen_keys'
+        seen_values'
+        (seq_add (attend_back_keys local) (acc_key_grads ++ [zero_vec width]))
+        (seq_add (attend_back_values local) (acc_value_grads ++ [zero_vec width]))
+        queries
+        keys
+        values
+        grad_outputs')
+      as [[query_rest key_rest] value_rest] eqn:Hrest.
+    rewrite Hrest in IHquery, IHkeys, IHvalues.
+    simpl in IHquery, IHkeys, IHvalues.
     simpl.
     split.
     + now rewrite IHquery.

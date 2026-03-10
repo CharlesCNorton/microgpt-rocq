@@ -3333,12 +3333,18 @@ Lemma seq_of_matrix_backprops_ok :
 Proof.
   intros rows width w inputs.
   induction inputs as [|input inputs IH]; intros grads Hwf Hinputs Hgrads.
+  assert (Hzero : matrix_ok rows width (zero_matrix (length w) width)).
+  {
+    destruct Hwf as [Hwlen _].
+    rewrite <- Hwlen.
+    apply zero_matrix_ok.
+  }
   - destruct grads; simpl.
-    + split; [apply zero_matrix_ok | constructor].
-    + split; [apply zero_matrix_ok | constructor].
+    + split; [exact Hzero | constructor].
+    + split; [exact Hzero | constructor].
   - inversion Hinputs as [|? ? Hinput Hinputs']; subst.
     destruct grads as [|grad grads']; simpl.
-    + split; [apply zero_matrix_ok | constructor].
+    + split; [exact Hzero | constructor].
     + inversion Hgrads as [|? ? Hgrad Hgrads']; subst.
       destruct (seq_of_matrix_backprops width w inputs grads')
         as [weight_grad_rest input_grads_rest] eqn:Hrest.

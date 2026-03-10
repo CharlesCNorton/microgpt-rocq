@@ -17,6 +17,7 @@ The model is a transformer language-model core with verified training and genera
 Implemented pieces:
 
 - token embeddings
+- exact positional embedding surfaces
 - query/key/value projections
 - causal self-attention
 - shared-weight stacked transformer depth controlled by hyperparameters
@@ -63,6 +64,7 @@ top-`k` / top-`p` decoding all route through that same normalized surface.
 - cached attention is extensionally equal to recomputed prefix attention
 - transformer block shape preservation
 - forward-pass output shape preservation
+- positional forward-pass output shape preservation
 - batch interface length preservation
 - greedy generation length preservation
 - final hidden-state shape preservation

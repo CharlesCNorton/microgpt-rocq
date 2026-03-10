@@ -968,6 +968,84 @@ Proof.
   now rewrite hidden_states_recompute_eq.
 Qed.
 
+Fixpoint one_hot_vector_aux (remaining target idx : nat) : Vector :=
+  match remaining with
+  | O => []
+  | S remaining' =>
+      (if Nat.eqb idx target then 1 else 0)
+      :: one_hot_vector_aux remaining' target (S idx)
+  end.
+
+Definition one_hot_vector (width target : nat) : Vector :=
+  one_hot_vector_aux width target 0.
+
+(** Positional information is kept exact and total through a small deterministic
+    additive signal.  Position zero stays unchanged so the smallest one-token
+    demos remain stable, while later positions receive a sparse rational bump. *)
+Definition position_scale : Scalar := 1 / 16.
+
+Definition position_vector (width pos : nat) : Vector :=
+  match width with
+  | O => []
+  | S width' =>
+      if Nat.eqb pos 0
+      then zero_vec (S width')
+      else vec_scale position_scale
+        (one_hot_vector (S width') (Nat.modulo pos (S width')))
+  end.
+
+Fixpoint embed_tokens_with_positions_aux
+  (hp : HyperParams)
+  (m : Model)
+  (pos : nat)
+  (tokens : list nat)
+  : list Vector :=
+  match tokens with
+  | [] => []
+  | tok :: tokens' =>
+      vec_add
+        (lookup_embedding hp (model_embeddings m) tok)
+        (position_vector (hp_d_model hp) pos)
+      :: embed_tokens_with_positions_aux hp m (S pos) tokens'
+  end.
+
+Definition embed_tokens_with_positions
+  (hp : HyperParams)
+  (m : Model)
+  (tokens : list nat)
+  : list Vector :=
+  embed_tokens_with_positions_aux hp m 0 tokens.
+
+Definition hidden_states_with_positions
+  (hp : HyperParams)
+  (m : Model)
+  (tokens : list nat)
+  : list Vector :=
+  transformer_stack (hp_layers hp) hp m
+    (embed_tokens_with_positions hp m tokens).
+
+Definition hidden_states_with_positions_recompute
+  (hp : HyperParams)
+  (m : Model)
+  (tokens : list nat)
+  : list Vector :=
+  transformer_stack_recompute (hp_layers hp) hp m
+    (embed_tokens_with_positions hp m tokens).
+
+Definition forward_with_positions
+  (hp : HyperParams)
+  (m : Model)
+  (tokens : list nat)
+  : list Vector :=
+  map (logits_for_hidden m) (hidden_states_with_positions hp m tokens).
+
+Definition forward_with_positions_recompute
+  (hp : HyperParams)
+  (m : Model)
+  (tokens : list nat)
+  : list Vector :=
+  map (logits_for_hidden m) (hidden_states_with_positions_recompute hp m tokens).
+
 Lemma one_hot_vector_aux_length :
   forall remaining target idx,
     length (one_hot_vector_aux remaining target idx) = remaining.
@@ -1192,84 +1270,6 @@ Definition mean_scalars (xs : list Scalar) : Scalar :=
   | [] => 0
   | _ => sum_scalars xs / q_of_nat (length xs)
   end.
-
-Fixpoint one_hot_vector_aux (remaining target idx : nat) : Vector :=
-  match remaining with
-  | O => []
-  | S remaining' =>
-      (if Nat.eqb idx target then 1 else 0)
-      :: one_hot_vector_aux remaining' target (S idx)
-  end.
-
-Definition one_hot_vector (width target : nat) : Vector :=
-  one_hot_vector_aux width target 0.
-
-(** Positional information is kept exact and total through a small deterministic
-    additive signal.  Position zero stays unchanged so the smallest one-token
-    demos remain stable, while later positions receive a sparse rational bump. *)
-Definition position_scale : Scalar := 1 / 16.
-
-Definition position_vector (width pos : nat) : Vector :=
-  match width with
-  | O => []
-  | S width' =>
-      if Nat.eqb pos 0
-      then zero_vec (S width')
-      else vec_scale position_scale
-        (one_hot_vector (S width') (Nat.modulo pos (S width')))
-  end.
-
-Fixpoint embed_tokens_with_positions_aux
-  (hp : HyperParams)
-  (m : Model)
-  (pos : nat)
-  (tokens : list nat)
-  : list Vector :=
-  match tokens with
-  | [] => []
-  | tok :: tokens' =>
-      vec_add
-        (lookup_embedding hp (model_embeddings m) tok)
-        (position_vector (hp_d_model hp) pos)
-      :: embed_tokens_with_positions_aux hp m (S pos) tokens'
-  end.
-
-Definition embed_tokens_with_positions
-  (hp : HyperParams)
-  (m : Model)
-  (tokens : list nat)
-  : list Vector :=
-  embed_tokens_with_positions_aux hp m 0 tokens.
-
-Definition hidden_states_with_positions
-  (hp : HyperParams)
-  (m : Model)
-  (tokens : list nat)
-  : list Vector :=
-  transformer_stack (hp_layers hp) hp m
-    (embed_tokens_with_positions hp m tokens).
-
-Definition hidden_states_with_positions_recompute
-  (hp : HyperParams)
-  (m : Model)
-  (tokens : list nat)
-  : list Vector :=
-  transformer_stack_recompute (hp_layers hp) hp m
-    (embed_tokens_with_positions hp m tokens).
-
-Definition forward_with_positions
-  (hp : HyperParams)
-  (m : Model)
-  (tokens : list nat)
-  : list Vector :=
-  map (logits_for_hidden m) (hidden_states_with_positions hp m tokens).
-
-Definition forward_with_positions_recompute
-  (hp : HyperParams)
-  (m : Model)
-  (tokens : list nat)
-  : list Vector :=
-  map (logits_for_hidden m) (hidden_states_with_positions_recompute hp m tokens).
 
 (** Output probabilities use a monotone exact score map rather than the older
     squared-score trick.  Nonpositive logits are compressed through a positive

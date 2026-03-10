@@ -2535,7 +2535,7 @@ Proof.
   destruct Ha as [Ha_emb [Ha_q [Ha_k [Ha_v [Ha_o [Ha_1 [Ha_2 Ha_out]]]]]]].
   destruct Hb as [Hb_emb [Hb_q [Hb_k [Hb_v [Hb_o [Hb_1 [Hb_2 Hb_out]]]]]]].
   unfold model_grad_add.
-  cbn.
+  cbn [grad_model_embeddings grad_model_w_q grad_model_w_k grad_model_w_v grad_model_w_o grad_model_w_1 grad_model_w_2 grad_model_out_proj].
   repeat split.
   - apply matrix_add_ok; assumption.
   - apply matrix_add_ok; assumption.
@@ -2556,7 +2556,7 @@ Proof.
   unfold model_grad_wf in *.
   destruct Hg as [Hemb [Hq [Hk [Hv [Ho [H1 [H2 Hout]]]]]]].
   unfold model_grad_scale.
-  cbn.
+  cbn [grad_model_embeddings grad_model_w_q grad_model_w_k grad_model_w_v grad_model_w_o grad_model_w_1 grad_model_w_2 grad_model_out_proj].
   repeat split.
   - apply matrix_scale_ok; assumption.
   - apply matrix_scale_ok; assumption.
@@ -2577,7 +2577,7 @@ Proof.
   unfold model_grad_wf in *.
   destruct Hg as [Hemb [Hq [Hk [Hv [Ho [H1 [H2 Hout]]]]]]].
   unfold model_grad_square.
-  cbn.
+  cbn [grad_model_embeddings grad_model_w_q grad_model_w_k grad_model_w_v grad_model_w_o grad_model_w_1 grad_model_w_2 grad_model_out_proj].
   repeat split.
   - apply matrix_square_ok; assumption.
   - apply matrix_square_ok; assumption.
@@ -2600,7 +2600,7 @@ Proof.
   destruct Ha as [Ha_emb [Ha_q [Ha_k [Ha_v [Ha_o [Ha_1 [Ha_2 Ha_out]]]]]]].
   destruct Hb as [Hb_emb [Hb_q [Hb_k [Hb_v [Hb_o [Hb_1 [Hb_2 Hb_out]]]]]]].
   unfold model_grad_div_safe.
-  cbn.
+  cbn [grad_model_embeddings grad_model_w_q grad_model_w_k grad_model_w_v grad_model_w_o grad_model_w_1 grad_model_w_2 grad_model_out_proj].
   repeat split.
   - apply matrix_div_safe_ok; assumption.
   - apply matrix_div_safe_ok; assumption.
@@ -2621,7 +2621,7 @@ Proof.
   unfold model_grad_wf in *.
   destruct Hg as [Hemb [Hq [Hk [Hv [Ho [H1 [H2 Hout]]]]]]].
   unfold model_grad_sqrt_floor.
-  cbn.
+  cbn [grad_model_embeddings grad_model_w_q grad_model_w_k grad_model_w_v grad_model_w_o grad_model_w_1 grad_model_w_2 grad_model_out_proj].
   repeat split.
   - apply matrix_sqrt_floor_ok; assumption.
   - apply matrix_sqrt_floor_ok; assumption.
@@ -2642,7 +2642,7 @@ Proof.
   unfold model_grad_wf in *.
   destruct Hg as [Hemb [Hq [Hk [Hv [Ho [H1 [H2 Hout]]]]]]].
   unfold model_grad_add_eps.
-  cbn.
+  cbn [grad_model_embeddings grad_model_w_q grad_model_w_k grad_model_w_v grad_model_w_o grad_model_w_1 grad_model_w_2 grad_model_out_proj].
   repeat split.
   - apply matrix_add_eps_ok; assumption.
   - apply matrix_add_eps_ok; assumption.
@@ -2677,7 +2677,7 @@ Proof.
   destruct Hm as [Hm_emb [Hm_q [Hm_k [Hm_v [Hm_o [Hm_1 [Hm_2 Hm_out]]]]]]].
   destruct Hg as [Hg_emb [Hg_q [Hg_k [Hg_v [Hg_o [Hg_1 [Hg_2 Hg_out]]]]]]].
   unfold model_apply_grad.
-  cbn.
+  cbn [model_embeddings model_w_q model_w_k model_w_v model_w_o model_w_1 model_w_2 model_out_proj].
   repeat split.
   - apply matrix_add_ok; assumption.
   - apply matrix_add_ok; assumption.

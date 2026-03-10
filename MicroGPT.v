@@ -3476,7 +3476,8 @@ Lemma embedding_grad_for_token_ok :
     matrix_ok rows cols (embedding_grad_for_token rows cols tok grad).
 Proof.
   intros rows cols tok grad Hgrad.
-  induction rows as [|rows IH]; simpl.
+  revert tok.
+  induction rows as [|rows IH]; intros tok; simpl.
   - apply zero_matrix_ok.
   - destruct tok as [|tok'].
     + split.
@@ -3487,12 +3488,13 @@ Proof.
         -- exact (proj2 (zero_matrix_ok rows cols)).
     + split.
       * simpl.
-        destruct IH as [IHlen _].
+        specialize (IH tok').
+        destruct IH as [IHlen IHrows].
         simpl.
         now rewrite IHlen.
       * constructor.
         -- apply row_ok_zero_vec.
-        -- exact (proj2 IH).
+        -- exact IHrows.
 Qed.
 
 Lemma embedding_grads_from_inputs_ok :

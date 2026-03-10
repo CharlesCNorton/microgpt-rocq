@@ -1121,27 +1121,29 @@ let embed_tokens_with_positions_float hp model tokens =
   in
   loop 0 tokens
 
-let kernel_score_float query key =
-  let score = float_dot query key in
-  1.0 +. (score *. score)
+let attention_probs_float query keys =
+  let logits =
+    keys
+    |> List.map (float_dot query)
+    |> Array.of_list
+  in
+  softmax_probs_float logits
 
 let attend_float width query keys values =
   let numerator = zero_float_vector width in
-  let denom = ref 0.0 in
-  let rec loop keys values =
-    match keys, values with
-    | key :: keys', value :: values' ->
-        let score = kernel_score_float query key in
-        denom := !denom +. score;
-        float_vec_add_scaled_inplace numerator score value;
-        loop keys' values'
+  let probs = Array.to_list (attention_probs_float query keys) in
+  let rec loop probs values =
+    match probs, values with
+    | prob :: probs', value :: values' ->
+        float_vec_add_scaled_inplace numerator prob value;
+        loop probs' values'
     | _, _ -> ()
   in
-  loop keys values;
-  if !denom = 0.0 then
+  loop probs values;
+  if probs = [] then
     zero_float_vector width
   else
-    Array.map (fun value -> value /. !denom) numerator
+    numerator
 
 let causal_attention_float width queries keys values =
   let rec loop seen_keys seen_values queries keys values =

@@ -364,6 +364,15 @@ Definition shift_logits_by_max (logits : Vector) : Vector :=
 Definition softmax_scores (logits : Vector) : Vector :=
   map softmax_exp (shift_logits_by_max logits).
 
+Arguments softmax_scalar_pow _ _ : simpl never.
+Arguments softmax_factorial _ : simpl never.
+Arguments softmax_exp_series_from _ _ _ : simpl never.
+Arguments softmax_exp _ : simpl never.
+Arguments max_scalar_from _ _ : simpl never.
+Arguments max_scalar _ : simpl never.
+Arguments shift_logits_by_max _ : simpl never.
+Arguments softmax_scores _ : simpl never.
+
 (** * Attention. *)
 
 Definition attention_logit (query key : Vector) : Scalar :=
@@ -377,6 +386,10 @@ Definition attention_score
   (query key : Vector)
   : Scalar :=
   softmax_exp (attention_logit query key - pivot).
+
+Arguments attention_logit _ _ : simpl never.
+Arguments attention_pivot _ _ : simpl never.
+Arguments attention_score _ _ _ : simpl never.
 
 Fixpoint attend_numerator
   (pivot : Scalar)
@@ -1357,6 +1370,8 @@ Definition normalized_output_distribution (logits : Vector) : Vector :=
   then zero_vec (length logits)
   else map (fun score => score / denom) scores.
 
+Arguments normalized_output_distribution _ : simpl never.
+
 Definition predict_next (hp : HyperParams) (m : Model) (tokens : list nat) : nat :=
   let logits := forward hp m tokens in
   let final_logits := last logits (zero_vec (hp_vocab hp)) in
@@ -1400,8 +1415,14 @@ Definition approx_neg_log (p : Scalar) : Scalar :=
 Definition target_token_probability (logits : Vector) (target : nat) : Scalar :=
   lookup_row target (normalized_output_distribution logits) 0.
 
+Arguments target_token_probability _ _ : simpl never.
+
 Definition token_distribution_loss (logits : Vector) (target : nat) : Scalar :=
   approx_neg_log (target_token_probability logits target).
+
+Arguments clamp_probability _ : simpl never.
+Arguments approx_neg_log _ : simpl never.
+Arguments token_distribution_loss _ _ : simpl never.
 
 Fixpoint sequence_token_losses (logits_seq : list Vector) (targets : list nat)
   : list Scalar :=

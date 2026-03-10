@@ -2650,7 +2650,7 @@ Lemma backprop_causal_attention_aux_lengths :
       (length acc_value_grads + length values)%nat.
 Proof.
   intros width seen_keys seen_values acc_key_grads acc_value_grads queries.
-  revert seen_keys seen_values acc_key_grads acc_value_grads keys values grad_outputs.
+  revert seen_keys seen_values acc_key_grads acc_value_grads.
   induction queries as [|query queries IH];
     intros seen_keys seen_values acc_key_grads acc_value_grads keys values grad_outputs
       Hseen_len Hacc_keys_len Hacc_vals_len Hqk Hkv Hvg.

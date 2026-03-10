@@ -3263,7 +3263,8 @@ Proof.
     remember (output_score logit + sum_scalars (output_scores logits')) as denom.
     destruct (Qeq_bool denom 0).
     + apply row_ok_zero_vec.
-    + remember
+    + unfold row_ok.
+      remember
         (vec_sub gp (const_vec (length gp) (dot gp probs))) as centered.
       assert (Hcentered : row_ok (S (length logits')) centered).
       {
@@ -3281,21 +3282,13 @@ Proof.
         apply vec_scale_row_ok.
         exact Hcentered.
       }
-      change
-        (row_ok (S (length logits'))
-           match scaled with
-           | [] => []
-           | y :: ys =>
-               output_score_grad logit * y
-               :: vec_hadamard (map output_score_grad logits') ys
-           end).
       destruct scaled as [|y ys].
       * unfold row_ok in Hscaled.
         discriminate.
-      * unfold row_ok in Hscaled.
+      * simpl.
+        unfold row_ok in Hscaled.
         simpl in Hscaled.
         inversion Hscaled as [Hys].
-        simpl.
         f_equal.
         rewrite vec_hadamard_length.
         -- rewrite map_length.

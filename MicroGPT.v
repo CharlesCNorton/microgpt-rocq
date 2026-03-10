@@ -1394,23 +1394,6 @@ Proof.
   induction Hxs as [|x xs Hx Hxs IH]; simpl; lra.
 Qed.
 
-Lemma one_hot_vector_row_ok :
-  forall width target,
-    row_ok width (one_hot_vector width target).
-Proof.
-  intros width target.
-  unfold one_hot_vector, row_ok.
-  assert (Haux :
-    forall remaining target idx,
-      length (one_hot_vector_aux remaining target idx) = remaining).
-  {
-    induction remaining as [|remaining IH]; intros target0 idx; simpl.
-    - reflexivity.
-    - now f_equal.
-  }
-  apply Haux.
-Qed.
-
 Lemma output_score_positive :
   forall logit,
     0 < output_score logit.

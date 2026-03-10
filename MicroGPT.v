@@ -3237,9 +3237,11 @@ Lemma token_distribution_loss_grad_row_ok :
 Proof.
   intros logits target.
   unfold token_distribution_loss_grad.
-  destruct logits as [|logit logits']; simpl.
+  destruct logits as [|logit logits'].
   - reflexivity.
-  - remember (normalized_output_distribution (logit :: logits')) as probs.
+  - cbn [one_hot_vector normalized_output_distribution output_scores sum_scalars
+         output_score output_score_grad vec_scale vec_sub zero_vec].
+    remember (normalized_output_distribution (logit :: logits')) as probs.
     remember (one_hot_vector (S (length logits')) target) as targets.
     remember
       (vec_scale (2 / q_of_nat (S (length logits')))
@@ -3263,49 +3265,15 @@ Proof.
     remember (output_score logit + sum_scalars (output_scores logits')) as denom.
     destruct (Qeq_bool denom 0).
     + apply row_ok_zero_vec.
-    + unfold row_ok.
-      remember
-        (vec_sub gp (const_vec (length gp) (dot gp probs))) as centered.
-      assert (Hcentered : row_ok (S (length logits')) centered).
-      {
-        subst centered.
+    + apply vec_hadamard_row_ok.
+      * apply map_row_ok.
+        reflexivity.
+      * apply vec_scale_row_ok.
         apply vec_sub_row_ok.
-        - exact Hgp.
-        - unfold row_ok, const_vec.
-          rewrite repeat_length.
-          exact Hgp.
-      }
-      remember (vec_scale (/ denom) centered) as scaled.
-      assert (Hscaled : row_ok (S (length logits')) scaled).
-      {
-        subst scaled.
-        apply vec_scale_row_ok.
-        exact Hcentered.
-      }
-      rewrite <- Heqscaled.
-      destruct scaled as [|y ys].
-      * unfold row_ok in Hscaled.
-        discriminate.
-      * simpl.
-        unfold row_ok in Hscaled.
-        simpl in Hscaled.
-        destruct logits' as [|logit' logits''].
-        -- destruct ys as [|y0 ys'].
-           ++ reflexivity.
-           ++ discriminate.
-        -- destruct ys as [|y0 ys'].
-           ++ discriminate.
-           ++ simpl in Hscaled.
-              inversion Hscaled as [Htail].
-              simpl.
-              f_equal.
-              f_equal.
-              rewrite vec_hadamard_length.
-              ** rewrite map_length.
-                 reflexivity.
-              ** rewrite map_length.
-                 symmetry.
-                 exact Htail.
+        -- exact Hgp.
+        -- unfold row_ok, const_vec.
+           rewrite repeat_length.
+           exact Hgp.
 Qed.
 
 Lemma sequence_logits_loss_grad_raw_row_ok :

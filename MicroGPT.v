@@ -2732,9 +2732,8 @@ Proof.
       Hqk'
       Hkv'
       Hvg').
-    destruct IH as [IHquery [IHkeys IHvalues]].
-    destruct
-      (backprop_causal_attention_aux
+    set (tail :=
+      backprop_causal_attention_aux
         width
         seen_keys'
         seen_values'
@@ -2743,10 +2742,10 @@ Proof.
         queries
         keys
         values
-        grad_outputs')
-      as [[query_rest key_rest] value_rest] eqn:Hrest.
-    cbn [fst snd] in IHquery, IHkeys, IHvalues.
-    cbn [fst snd].
+        grad_outputs') in *.
+    destruct IH as [IHquery [IHkeys IHvalues]].
+    destruct tail as [[query_rest key_rest] value_rest].
+    cbn in *.
     split.
     + now rewrite IHquery.
     + split.

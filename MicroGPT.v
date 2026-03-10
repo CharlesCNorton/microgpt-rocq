@@ -1149,7 +1149,8 @@ Proof.
   unfold output_score.
   destruct (Qle_bool logit 0) eqn:Hle.
   - apply Qle_bool_iff in Hle.
-    change (0 < / (1 - logit)).
+    unfold Qdiv.
+    rewrite Qmult_1_l.
     apply Qinv_lt_0_compat.
     lra.
   - assert (~ logit <= 0) as Hnle.

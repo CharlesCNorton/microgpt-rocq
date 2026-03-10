@@ -2536,15 +2536,8 @@ Proof.
   destruct Hb as [Hb_emb [Hb_q [Hb_k [Hb_v [Hb_o [Hb_1 [Hb_2 Hb_out]]]]]]].
   unfold model_grad_add.
   cbn [grad_model_embeddings grad_model_w_q grad_model_w_k grad_model_w_v grad_model_w_o grad_model_w_1 grad_model_w_2 grad_model_out_proj].
-  repeat split.
-  - apply matrix_add_ok; assumption.
-  - apply matrix_add_ok; assumption.
-  - apply matrix_add_ok; assumption.
-  - apply matrix_add_ok; assumption.
-  - apply matrix_add_ok; assumption.
-  - apply matrix_add_ok; assumption.
-  - apply matrix_add_ok; assumption.
-  - apply matrix_add_ok; assumption.
+  do 7 (split; [apply matrix_add_ok; assumption |]).
+  apply matrix_add_ok; assumption.
 Qed.
 
 Lemma model_grad_wf_scale :
@@ -2557,15 +2550,8 @@ Proof.
   destruct Hg as [Hemb [Hq [Hk [Hv [Ho [H1 [H2 Hout]]]]]]].
   unfold model_grad_scale.
   cbn [grad_model_embeddings grad_model_w_q grad_model_w_k grad_model_w_v grad_model_w_o grad_model_w_1 grad_model_w_2 grad_model_out_proj].
-  repeat split.
-  - apply matrix_scale_ok; assumption.
-  - apply matrix_scale_ok; assumption.
-  - apply matrix_scale_ok; assumption.
-  - apply matrix_scale_ok; assumption.
-  - apply matrix_scale_ok; assumption.
-  - apply matrix_scale_ok; assumption.
-  - apply matrix_scale_ok; assumption.
-  - apply matrix_scale_ok; assumption.
+  do 7 (split; [apply matrix_scale_ok; assumption |]).
+  apply matrix_scale_ok; assumption.
 Qed.
 
 Lemma model_grad_wf_square :
@@ -2578,15 +2564,8 @@ Proof.
   destruct Hg as [Hemb [Hq [Hk [Hv [Ho [H1 [H2 Hout]]]]]]].
   unfold model_grad_square.
   cbn [grad_model_embeddings grad_model_w_q grad_model_w_k grad_model_w_v grad_model_w_o grad_model_w_1 grad_model_w_2 grad_model_out_proj].
-  repeat split.
-  - apply matrix_square_ok; assumption.
-  - apply matrix_square_ok; assumption.
-  - apply matrix_square_ok; assumption.
-  - apply matrix_square_ok; assumption.
-  - apply matrix_square_ok; assumption.
-  - apply matrix_square_ok; assumption.
-  - apply matrix_square_ok; assumption.
-  - apply matrix_square_ok; assumption.
+  do 7 (split; [apply matrix_square_ok; assumption |]).
+  apply matrix_square_ok; assumption.
 Qed.
 
 Lemma model_grad_wf_div_safe :
@@ -2601,15 +2580,8 @@ Proof.
   destruct Hb as [Hb_emb [Hb_q [Hb_k [Hb_v [Hb_o [Hb_1 [Hb_2 Hb_out]]]]]]].
   unfold model_grad_div_safe.
   cbn [grad_model_embeddings grad_model_w_q grad_model_w_k grad_model_w_v grad_model_w_o grad_model_w_1 grad_model_w_2 grad_model_out_proj].
-  repeat split.
-  - apply matrix_div_safe_ok; assumption.
-  - apply matrix_div_safe_ok; assumption.
-  - apply matrix_div_safe_ok; assumption.
-  - apply matrix_div_safe_ok; assumption.
-  - apply matrix_div_safe_ok; assumption.
-  - apply matrix_div_safe_ok; assumption.
-  - apply matrix_div_safe_ok; assumption.
-  - apply matrix_div_safe_ok; assumption.
+  do 7 (split; [apply matrix_div_safe_ok; assumption |]).
+  apply matrix_div_safe_ok; assumption.
 Qed.
 
 Lemma model_grad_wf_sqrt_floor :
@@ -2622,15 +2594,8 @@ Proof.
   destruct Hg as [Hemb [Hq [Hk [Hv [Ho [H1 [H2 Hout]]]]]]].
   unfold model_grad_sqrt_floor.
   cbn [grad_model_embeddings grad_model_w_q grad_model_w_k grad_model_w_v grad_model_w_o grad_model_w_1 grad_model_w_2 grad_model_out_proj].
-  repeat split.
-  - apply matrix_sqrt_floor_ok; assumption.
-  - apply matrix_sqrt_floor_ok; assumption.
-  - apply matrix_sqrt_floor_ok; assumption.
-  - apply matrix_sqrt_floor_ok; assumption.
-  - apply matrix_sqrt_floor_ok; assumption.
-  - apply matrix_sqrt_floor_ok; assumption.
-  - apply matrix_sqrt_floor_ok; assumption.
-  - apply matrix_sqrt_floor_ok; assumption.
+  do 7 (split; [apply matrix_sqrt_floor_ok; assumption |]).
+  apply matrix_sqrt_floor_ok; assumption.
 Qed.
 
 Lemma model_grad_wf_add_eps :
@@ -2643,15 +2608,8 @@ Proof.
   destruct Hg as [Hemb [Hq [Hk [Hv [Ho [H1 [H2 Hout]]]]]]].
   unfold model_grad_add_eps.
   cbn [grad_model_embeddings grad_model_w_q grad_model_w_k grad_model_w_v grad_model_w_o grad_model_w_1 grad_model_w_2 grad_model_out_proj].
-  repeat split.
-  - apply matrix_add_eps_ok; assumption.
-  - apply matrix_add_eps_ok; assumption.
-  - apply matrix_add_eps_ok; assumption.
-  - apply matrix_add_eps_ok; assumption.
-  - apply matrix_add_eps_ok; assumption.
-  - apply matrix_add_eps_ok; assumption.
-  - apply matrix_add_eps_ok; assumption.
-  - apply matrix_add_eps_ok; assumption.
+  do 7 (split; [apply matrix_add_eps_ok; assumption |]).
+  apply matrix_add_eps_ok; assumption.
 Qed.
 
 Lemma normalize_model_grad_wf :
@@ -2678,15 +2636,8 @@ Proof.
   destruct Hg as [Hg_emb [Hg_q [Hg_k [Hg_v [Hg_o [Hg_1 [Hg_2 Hg_out]]]]]]].
   unfold model_apply_grad.
   cbn [model_embeddings model_w_q model_w_k model_w_v model_w_o model_w_1 model_w_2 model_out_proj].
-  repeat split.
-  - apply matrix_add_ok; assumption.
-  - apply matrix_add_ok; assumption.
-  - apply matrix_add_ok; assumption.
-  - apply matrix_add_ok; assumption.
-  - apply matrix_add_ok; assumption.
-  - apply matrix_add_ok; assumption.
-  - apply matrix_add_ok; assumption.
-  - apply matrix_add_ok; assumption.
+  do 7 (split; [apply matrix_add_ok; assumption |]).
+  apply matrix_add_ok; assumption.
 Qed.
 
 Fixpoint scalar_pow (x : Scalar) (n : nat) : Scalar :=

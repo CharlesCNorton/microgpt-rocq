@@ -2801,12 +2801,14 @@ Proof.
         Hgrads').
       destruct IH as [IHquery [IHkeys IHvalues]].
       split.
-      * constructor.
-        -- exact Hlocal_query.
-        -- exact IHquery.
-      * split.
-        -- exact IHkeys.
-        -- exact IHvalues.
+      { constructor.
+        - exact Hlocal_query.
+        - exact IHquery.
+      }
+      { split.
+        - exact IHkeys.
+        - exact IHvalues.
+      }
 Qed.
 
 Lemma backprop_causal_attention_ok :

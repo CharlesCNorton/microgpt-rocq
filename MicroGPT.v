@@ -20,12 +20,11 @@
   * Design choices.
   *
   * - Scalars are exact rationals [Q].
-  * - Attention uses a positive kernel [1 + dot(q, k)^2], followed by explicit
-  *   normalization by the sum of the prefix scores.
+  * - Attention uses max-shifted softmax over query-key dot products.
   * - Invalid token indices fall back to the zero vector, which keeps lookup
   *   total and the extracted program robust.
   * - The training surface in this file is a linear
-  *   readout head on top of the final hidden state with squared loss and a
+  *   readout head on top of the final hidden state with cross-entropy loss and a
   *   reverse-mode backward pass.
   *
   * The file contains:
@@ -306,48 +305,101 @@ Proof.
   exact Hw2.
 Qed.
 
+(** * Softmax support. *)
+
+(** The scalar core stays executable over [Q], so exponentials and logarithms
+    use explicit rational approximants instead of axiomatized reals. *)
+Fixpoint softmax_scalar_pow (x : Scalar) (n : nat) : Scalar :=
+  match n with
+  | O => 1
+  | S n' => x * softmax_scalar_pow x n'
+  end.
+
+Fixpoint softmax_factorial (n : nat) : nat :=
+  match n with
+  | O => 1
+  | S n' => S n' * softmax_factorial n'
+  end.
+
+Fixpoint softmax_exp_series_from
+  (x : Scalar)
+  (next remaining : nat)
+  : Scalar :=
+  match remaining with
+  | O => 0
+  | S remaining' =>
+      softmax_scalar_pow x next / q_of_nat (softmax_factorial next) +
+      softmax_exp_series_from x (S next) remaining'
+  end.
+
+Definition softmax_exp_terms : nat := 8.
+
+Definition softmax_exp_nonnegative (x : Scalar) : Scalar :=
+  softmax_exp_series_from x 0 (S softmax_exp_terms).
+
+Definition softmax_exp (x : Scalar) : Scalar :=
+  if Qle_bool x 0
+  then / softmax_exp_nonnegative (- x)
+  else softmax_exp_nonnegative x.
+
+Fixpoint max_scalar_from (current : Scalar) (xs : Vector) : Scalar :=
+  match xs with
+  | [] => current
+  | x :: xs' =>
+      if Qle_bool current x
+      then max_scalar_from x xs'
+      else max_scalar_from current xs'
+  end.
+
+Definition max_scalar (xs : Vector) : Scalar :=
+  match xs with
+  | [] => 0
+  | x :: xs' => max_scalar_from x xs'
+  end.
+
+Definition shift_logits_by_max (logits : Vector) : Vector :=
+  let pivot := max_scalar logits in
+  map (fun logit => logit - pivot) logits.
+
+Definition softmax_scores (logits : Vector) : Vector :=
+  map softmax_exp (shift_logits_by_max logits).
+
 (** * Attention. *)
 
-(** This kernel is positive by construction and exact over rationals. *)
-Definition kernel_score (query key : Vector) : Scalar :=
-  1 + dot query key * dot query key.
+Definition attention_logit (query key : Vector) : Scalar :=
+  dot query key.
 
-Lemma kernel_score_positive :
-  forall query key,
-    0 < kernel_score query key.
-Proof.
-  intros query key.
-  unfold kernel_score.
-  assert (0 <= dot query key * dot query key).
-  {
-    destruct (Qlt_le_dec (dot query key) 0) as [Hneg|Hnonneg].
-    - setoid_replace (dot query key * dot query key)
-        with ((- dot query key) * (- dot query key)) by ring.
-      apply Qmult_le_0_compat; lra.
-    - apply Qmult_le_0_compat; lra.
-  }
-  lra.
-Qed.
+Definition attention_pivot (query : Vector) (keys : list Vector) : Scalar :=
+  max_scalar (map (attention_logit query) keys).
+
+Definition attention_score
+  (pivot : Scalar)
+  (query key : Vector)
+  : Scalar :=
+  softmax_exp (attention_logit query key - pivot).
 
 Fixpoint attend_numerator
+  (pivot : Scalar)
   (query : Vector)
   (keys values : list Vector)
   (acc : Vector)
   : Vector :=
   match keys, values with
   | key :: keys', value :: values' =>
-      attend_numerator query keys' values'
-        (vec_add acc (vec_scale (kernel_score query key) value))
+      attend_numerator pivot query keys' values'
+        (vec_add acc (vec_scale (attention_score pivot query key) value))
   | _, _ => acc
   end.
 
 Fixpoint attend_denominator
+  (pivot : Scalar)
   (query : Vector)
   (keys : list Vector)
   : Scalar :=
   match keys with
   | [] => 0
-  | key :: keys' => kernel_score query key + attend_denominator query keys'
+  | key :: keys' =>
+      attention_score pivot query key + attend_denominator pivot query keys'
   end.
 
 Definition normalize_vec
@@ -364,17 +416,18 @@ Definition attend
   (query : Vector)
   (keys values : list Vector)
   : Vector :=
+  let pivot := attention_pivot query keys in
   normalize_vec width
-    (attend_denominator query keys)
-    (attend_numerator query keys values (zero_vec width)).
+    (attend_denominator pivot query keys)
+    (attend_numerator pivot query keys values (zero_vec width)).
 
 Lemma attend_numerator_row_ok :
-  forall width query keys values acc,
+  forall width pivot query keys values acc,
     row_ok width acc ->
     Forall (row_ok width) values ->
-    row_ok width (attend_numerator query keys values acc).
+    row_ok width (attend_numerator pivot query keys values acc).
 Proof.
-  intros width query keys.
+  intros width pivot query keys.
   induction keys as [|key keys IH]; intros values acc Hacc Hvals.
   - destruct values; simpl; exact Hacc.
   - destruct values as [|value values'].
@@ -409,6 +462,7 @@ Lemma attend_row_ok :
 Proof.
   intros width query keys values Hvals.
   unfold attend.
+  remember (attention_pivot query keys) as pivot.
   apply normalize_vec_row_ok.
   apply attend_numerator_row_ok.
   - apply row_ok_zero_vec.
@@ -1295,65 +1349,6 @@ Definition mean_scalars (xs : list Scalar) : Scalar :=
   | [] => 0
   | _ => sum_scalars xs / q_of_nat (length xs)
   end.
-
-(** The language-model output surface now uses a max-shifted softmax shape.
-    Because the core scalar type is [Q], the exponential and logarithm are
-    implemented with explicit rational approximants so the development remains
-    executable after extraction. *)
-Fixpoint softmax_scalar_pow (x : Scalar) (n : nat) : Scalar :=
-  match n with
-  | O => 1
-  | S n' => x * softmax_scalar_pow x n'
-  end.
-
-Fixpoint softmax_factorial (n : nat) : nat :=
-  match n with
-  | O => 1
-  | S n' => S n' * softmax_factorial n'
-  end.
-
-Fixpoint softmax_exp_series_from
-  (x : Scalar)
-  (next remaining : nat)
-  : Scalar :=
-  match remaining with
-  | O => 0
-  | S remaining' =>
-      softmax_scalar_pow x next / q_of_nat (softmax_factorial next) +
-      softmax_exp_series_from x (S next) remaining'
-  end.
-
-Definition softmax_exp_terms : nat := 8.
-
-Definition softmax_exp_nonnegative (x : Scalar) : Scalar :=
-  softmax_exp_series_from x 0 (S softmax_exp_terms).
-
-Definition softmax_exp (x : Scalar) : Scalar :=
-  if Qle_bool x 0
-  then / softmax_exp_nonnegative (- x)
-  else softmax_exp_nonnegative x.
-
-Fixpoint max_scalar_from (current : Scalar) (xs : Vector) : Scalar :=
-  match xs with
-  | [] => current
-  | x :: xs' =>
-      if Qle_bool current x
-      then max_scalar_from x xs'
-      else max_scalar_from current xs'
-  end.
-
-Definition max_scalar (xs : Vector) : Scalar :=
-  match xs with
-  | [] => 0
-  | x :: xs' => max_scalar_from x xs'
-  end.
-
-Definition shift_logits_by_max (logits : Vector) : Vector :=
-  let pivot := max_scalar logits in
-  map (fun logit => logit - pivot) logits.
-
-Definition softmax_scores (logits : Vector) : Vector :=
-  map softmax_exp (shift_logits_by_max logits).
 
 Definition normalized_output_distribution (logits : Vector) : Vector :=
   let scores := softmax_scores logits in
@@ -2362,6 +2357,7 @@ Record AttendBackprop := {
 
 Fixpoint backprop_attend_aux
   (width : nat)
+  (pivot : Scalar)
   (query : Vector)
   (keys values : list Vector)
   (output grad_out : Vector)
@@ -2369,13 +2365,13 @@ Fixpoint backprop_attend_aux
   : AttendBackprop :=
   match keys, values with
   | key :: keys', value :: values' =>
-      let local_score := kernel_score query key in
-      let local_signal := dot grad_out (vec_sub value output) / denom in
-      let local_dot_grad := 2 * dot query key * local_signal in
-      let local_query := vec_scale local_dot_grad key in
-      let local_key := vec_scale local_dot_grad query in
+      let local_score := attention_score pivot query key in
+      let local_signal := dot grad_out (vec_sub value output) in
+      let local_logit_grad := (local_score / denom) * local_signal in
+      let local_query := vec_scale local_logit_grad key in
+      let local_key := vec_scale local_logit_grad query in
       let local_value := vec_scale (local_score / denom) grad_out in
-      let rest := backprop_attend_aux width query keys' values' output grad_out denom in
+      let rest := backprop_attend_aux width pivot query keys' values' output grad_out denom in
       {|
         attend_back_query := vec_add local_query (attend_back_query rest);
         attend_back_keys := local_key :: attend_back_keys rest;
@@ -2395,7 +2391,8 @@ Definition backprop_attend
   (keys values : list Vector)
   (grad_out : Vector)
   : AttendBackprop :=
-  let denom := attend_denominator query keys in
+  let pivot := attention_pivot query keys in
+  let denom := attend_denominator pivot query keys in
   if Qeq_bool denom 0
   then
     {|
@@ -2404,7 +2401,7 @@ Definition backprop_attend
       attend_back_values := zero_sequence (length values) width
     |}
   else
-    backprop_attend_aux width query keys values (attend width query keys values) grad_out denom.
+    backprop_attend_aux width pivot query keys values (attend width query keys values) grad_out denom.
 
 Fixpoint backprop_causal_attention_aux
   (width : nat)
@@ -2452,14 +2449,14 @@ Definition backprop_causal_attention
     grad_outputs.
 
 Lemma backprop_attend_aux_lengths :
-  forall width query keys values output grad_out denom,
+  forall width pivot query keys values output grad_out denom,
     length keys = length values ->
     length (attend_back_keys
-      (backprop_attend_aux width query keys values output grad_out denom)) = length keys /\
+      (backprop_attend_aux width pivot query keys values output grad_out denom)) = length keys /\
     length (attend_back_values
-      (backprop_attend_aux width query keys values output grad_out denom)) = length values.
+      (backprop_attend_aux width pivot query keys values output grad_out denom)) = length values.
 Proof.
-  intros width query keys.
+  intros width pivot query keys.
   induction keys as [|key keys IH]; intros values output grad_out denom Hlen.
   - destruct values as [|value values]; simpl in *.
     + split; reflexivity.
@@ -2476,7 +2473,7 @@ Proof.
 Qed.
 
 Lemma backprop_attend_aux_ok :
-  forall width query keys values output grad_out denom,
+  forall width pivot query keys values output grad_out denom,
     row_ok width query ->
     Forall (row_ok width) keys ->
     Forall (row_ok width) values ->
@@ -2484,15 +2481,15 @@ Lemma backprop_attend_aux_ok :
     row_ok width grad_out ->
     row_ok width
       (attend_back_query
-        (backprop_attend_aux width query keys values output grad_out denom)) /\
+        (backprop_attend_aux width pivot query keys values output grad_out denom)) /\
     Forall (row_ok width)
       (attend_back_keys
-        (backprop_attend_aux width query keys values output grad_out denom)) /\
+        (backprop_attend_aux width pivot query keys values output grad_out denom)) /\
     Forall (row_ok width)
       (attend_back_values
-        (backprop_attend_aux width query keys values output grad_out denom)).
+        (backprop_attend_aux width pivot query keys values output grad_out denom)).
 Proof.
-  intros width query keys.
+  intros width pivot query keys.
   induction keys as [|key keys IH]; intros values output grad_out denom Hquery Hkeys Hvalues Houtput Hgrad_out.
   - destruct values as [|value values]; simpl.
     + split.
@@ -2533,7 +2530,8 @@ Lemma backprop_attend_lengths :
 Proof.
   intros width query keys values grad_out Hlen.
   unfold backprop_attend.
-  destruct (Qeq_bool (attend_denominator query keys) 0); simpl.
+  remember (attention_pivot query keys) as pivot.
+  destruct (Qeq_bool (attend_denominator pivot query keys) 0); simpl.
   - split.
     + unfold zero_sequence.
       apply repeat_length.
@@ -2555,7 +2553,8 @@ Lemma backprop_attend_ok :
 Proof.
   intros width query keys values grad_out Hquery Hkeys Hvalues Hgrad_out.
   unfold backprop_attend.
-  destruct (Qeq_bool (attend_denominator query keys) 0); simpl.
+  remember (attention_pivot query keys) as pivot.
+  destruct (Qeq_bool (attend_denominator pivot query keys) 0); simpl.
   - split.
     + apply row_ok_zero_vec.
     + split.
@@ -5242,11 +5241,11 @@ Proof.
     apply model_grad_wf_div_safe; assumption.
   }
   unfold adam_state_wf.
+  cbn [adam_model adam_moment_1 adam_moment_2].
   split.
-  - apply model_apply_grad_preserves_wf.
+  - eapply model_apply_grad_preserves_wf.
     + exact Hmodel_wf.
-    + apply model_grad_wf_scale.
-      exact Hstep_grad_wf.
+    + exact (model_grad_wf_scale hp (- learning_rate) step_grad Hstep_grad_wf).
   - split.
     + exact Hmoment_1_wf.
     + exact Hmoment_2_wf.

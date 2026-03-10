@@ -2732,8 +2732,8 @@ Proof.
       Hqk'
       Hkv'
       Hvg').
-    set (tail :=
-      backprop_causal_attention_aux
+    remember
+      (backprop_causal_attention_aux
         width
         seen_keys'
         seen_values'
@@ -2742,25 +2742,33 @@ Proof.
         queries
         keys
         values
-        grad_outputs') in *.
+        grad_outputs') as tail eqn:Htail.
     destruct IH as [IHquery [IHkeys IHvalues]].
     destruct tail as [[query_rest key_rest] value_rest].
     cbn in *.
+    subst local seen_keys' seen_values'.
     split.
-    + simpl.
+    + cbn [backprop_causal_attention_aux fst snd].
+      simpl.
+      rewrite <- Htail.
+      simpl.
       now rewrite IHquery.
     + split.
-      * simpl.
+      * cbn [backprop_causal_attention_aux fst snd].
+        simpl.
+        rewrite <- Htail.
+        simpl.
         rewrite IHkeys.
         rewrite Hacc_keys_len'.
-        subst seen_keys'.
         rewrite app_length.
         simpl.
         lia.
-      * simpl.
+      * cbn [backprop_causal_attention_aux fst snd].
+        simpl.
+        rewrite <- Htail.
+        simpl.
         rewrite IHvalues.
         rewrite Hacc_vals_len'.
-        subst seen_values'.
         rewrite app_length.
         simpl.
         lia.

@@ -2309,6 +2309,19 @@ Fixpoint seq_of_matrix_backprops
   | _, _ => (zero_matrix (length w) width, [])
   end.
 
+Lemma seq_of_matrix_backprops_input_grads_length :
+  forall width w inputs grads,
+    length (snd (seq_of_matrix_backprops width w inputs grads)) =
+    Nat.min (length inputs) (length grads).
+Proof.
+  intros width w inputs.
+  induction inputs as [|input inputs IH]; intros grads; simpl.
+  - reflexivity.
+  - destruct grads as [|grad grads']; simpl.
+    + reflexivity.
+    + now rewrite IH.
+Qed.
+
 Record FeedForwardBackprop := {
   ff_back_w1 : Matrix;
   ff_back_w2 : Matrix;
@@ -2351,6 +2364,19 @@ Fixpoint backprop_feed_forward_sequence
        zero_matrix d_model d_hidden,
        [])
   end.
+
+Lemma backprop_feed_forward_sequence_input_grads_length :
+  forall d_model d_hidden w1 w2 inputs grads_out,
+    length (snd (backprop_feed_forward_sequence d_model d_hidden w1 w2 inputs grads_out)) =
+    Nat.min (length inputs) (length grads_out).
+Proof.
+  intros d_model d_hidden w1 w2 inputs.
+  induction inputs as [|input inputs IH]; intros grads_out; simpl.
+  - reflexivity.
+  - destruct grads_out as [|grad_out grads_out']; simpl.
+    + reflexivity.
+    + now rewrite IH.
+Qed.
 
 Record AttendBackprop := {
   attend_back_query : Vector;
@@ -2576,6 +2602,144 @@ Proof.
     + apply attend_row_ok.
       exact Hvalues.
     + exact Hgrad_out.
+Qed.
+
+Lemma backprop_causal_attention_aux_lengths :
+  forall width seen_keys seen_values acc_key_grads acc_value_grads
+    queries keys values grad_outputs,
+    length seen_keys = length seen_values ->
+    length acc_key_grads = length seen_keys ->
+    length acc_value_grads = length seen_values ->
+    length queries = length keys ->
+    length keys = length values ->
+    length values = length grad_outputs ->
+    length (fst (fst (backprop_causal_attention_aux
+      width seen_keys seen_values acc_key_grads acc_value_grads
+      queries keys values grad_outputs))) = length queries /\
+    length (snd (fst (backprop_causal_attention_aux
+      width seen_keys seen_values acc_key_grads acc_value_grads
+      queries keys values grad_outputs))) =
+      (length acc_key_grads + length keys)%nat /\
+    length (snd (backprop_causal_attention_aux
+      width seen_keys seen_values acc_key_grads acc_value_grads
+      queries keys values grad_outputs)) =
+      (length acc_value_grads + length values)%nat.
+Proof.
+  intros width seen_keys seen_values acc_key_grads acc_value_grads queries.
+  revert seen_keys seen_values acc_key_grads acc_value_grads keys values grad_outputs.
+  induction queries as [|query queries IH];
+    intros seen_keys seen_values acc_key_grads acc_value_grads keys values grad_outputs
+      Hseen_len Hacc_keys_len Hacc_vals_len Hqk Hkv Hvg.
+  - destruct keys as [|key keys]; simpl in Hqk; try discriminate.
+    destruct values as [|value values]; simpl in Hkv; try discriminate.
+    destruct grad_outputs as [|grad_out grad_outputs]; simpl in Hvg; try discriminate.
+    simpl.
+    split.
+    + reflexivity.
+    + split.
+      * now rewrite Nat.add_0_r.
+      * now rewrite Nat.add_0_r.
+  - destruct keys as [|key keys]; simpl in Hqk; try discriminate.
+    destruct values as [|value values]; simpl in Hkv; try discriminate.
+    destruct grad_outputs as [|grad_out grad_outputs']; simpl in Hvg; try discriminate.
+    inversion Hqk as [Hqk'].
+    inversion Hkv as [Hkv'].
+    inversion Hvg as [Hvg'].
+    set (seen_keys' := seen_keys ++ [key]).
+    set (seen_values' := seen_values ++ [value]).
+    set (local := backprop_attend width query seen_keys' seen_values' grad_out).
+    assert (Hlocal_len :
+      length (attend_back_keys local) = length seen_keys' /\
+      length (attend_back_values local) = length seen_values').
+    {
+      subst local seen_keys' seen_values'.
+      apply backprop_attend_lengths.
+      rewrite !app_length.
+      simpl.
+      lia.
+    }
+    destruct Hlocal_len as [Hlocal_keys_len Hlocal_values_len].
+    assert (Hacc_keys_len' :
+      length (seq_add (attend_back_keys local) (acc_key_grads ++ [zero_vec width])) =
+      length seen_keys').
+    {
+      rewrite seq_add_length.
+      - exact Hlocal_keys_len.
+      - rewrite app_length.
+        simpl.
+        rewrite Hacc_keys_len.
+        subst seen_keys'.
+        rewrite app_length in Hlocal_keys_len.
+        simpl in Hlocal_keys_len.
+        exact Hlocal_keys_len.
+    }
+    assert (Hacc_vals_len' :
+      length (seq_add (attend_back_values local) (acc_value_grads ++ [zero_vec width])) =
+      length seen_values').
+    {
+      rewrite seq_add_length.
+      - exact Hlocal_values_len.
+      - rewrite app_length.
+        simpl.
+        rewrite Hacc_vals_len.
+        subst seen_values'.
+        rewrite app_length in Hlocal_values_len.
+        simpl in Hlocal_values_len.
+        exact Hlocal_values_len.
+    }
+    assert (Hseen_len' : length seen_keys' = length seen_values').
+    {
+      subst seen_keys' seen_values'.
+      rewrite !app_length.
+      simpl.
+      lia.
+    }
+    specialize (IH
+      seen_keys'
+      seen_values'
+      (seq_add (attend_back_keys local) (acc_key_grads ++ [zero_vec width]))
+      (seq_add (attend_back_values local) (acc_value_grads ++ [zero_vec width]))
+      keys
+      values
+      grad_outputs'
+      Hseen_len'
+      Hacc_keys_len'
+      Hacc_vals_len'
+      Hqk'
+      Hkv'
+      Hvg').
+    destruct IH as [IHquery [IHkeys IHvalues]].
+    simpl.
+    split.
+    + now rewrite IHquery.
+    + split.
+      * rewrite IHkeys.
+        lia.
+      * rewrite IHvalues.
+        lia.
+Qed.
+
+Lemma backprop_causal_attention_lengths :
+  forall width queries keys values grad_outputs,
+    length queries = length keys ->
+    length keys = length values ->
+    length values = length grad_outputs ->
+    length (fst (fst (backprop_causal_attention width queries keys values grad_outputs))) =
+      length queries /\
+    length (snd (fst (backprop_causal_attention width queries keys values grad_outputs))) =
+      length keys /\
+    length (snd (backprop_causal_attention width queries keys values grad_outputs)) =
+      length values.
+Proof.
+  intros width queries keys values grad_outputs Hqk Hkv Hvg.
+  unfold backprop_causal_attention.
+  apply backprop_causal_attention_aux_lengths.
+  - reflexivity.
+  - reflexivity.
+  - reflexivity.
+  - exact Hqk.
+  - exact Hkv.
+  - exact Hvg.
 Qed.
 
 Lemma backprop_causal_attention_aux_ok :
@@ -3503,6 +3667,31 @@ Definition sequence_logits_loss_grad
         (vec_scale (/ q_of_nat (length targets)))
         (sequence_logits_loss_grad_raw logits_seq targets)
   end.
+
+Lemma sequence_logits_loss_grad_raw_length :
+  forall logits_seq targets,
+    length (sequence_logits_loss_grad_raw logits_seq targets) =
+    Nat.min (length logits_seq) (length targets).
+Proof.
+  induction logits_seq as [|logits logits_seq IH]; intros targets; simpl.
+  - reflexivity.
+  - destruct targets as [|target targets']; simpl.
+    + reflexivity.
+    + now rewrite IH.
+Qed.
+
+Lemma sequence_logits_loss_grad_length :
+  forall logits_seq targets,
+    length (sequence_logits_loss_grad logits_seq targets) =
+    Nat.min (length logits_seq) (length targets).
+Proof.
+  intros logits_seq targets.
+  unfold sequence_logits_loss_grad.
+  destruct targets as [|target targets']; simpl.
+  - reflexivity.
+  - rewrite map_length.
+    apply sequence_logits_loss_grad_raw_length.
+Qed.
 
 Definition sequence_loss_grad_for_tokens
   (hp : HyperParams)

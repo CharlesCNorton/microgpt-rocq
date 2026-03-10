@@ -50,7 +50,8 @@ jobs:
           grep -q '^demo1$' demo_output.txt
           grep -q '^formal_train_demo$' demo_output.txt
           grep -q '^formal_full_model_demo$' demo_output.txt
-          grep -q '^  sgd_prediction_0=' demo_output.txt
+          grep -q '^  initial_prediction=' demo_output.txt
+          grep -q '^  sgd_prediction_1=' demo_output.txt
           grep -q '^  sgd_top_k=' demo_output.txt
           grep -q '^  sgd_top_p=' demo_output.txt
           grep -q '^  adam_prediction_2=' demo_output.txt

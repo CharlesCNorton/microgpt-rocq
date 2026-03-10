@@ -2613,16 +2613,29 @@ Proof.
       Hacc_keys Hacc_vals Hqueries Hkeys Hvalues Hgrads.
   - destruct keys, values, grad_outputs; simpl; repeat split; try constructor; assumption.
   - inversion Hqueries as [|? ? Hquery Hqueries']; subst.
-    destruct keys as [|key keys]; destruct values as [|value values];
-      destruct grad_outputs as [|grad_out grad_outputs']; simpl;
-      repeat split; try constructor; try assumption.
-    + exact Hacc_keys.
-    + exact Hacc_vals.
-    + exact Hacc_keys.
-    + exact Hacc_vals.
-    + exact Hacc_keys.
-    + exact Hacc_vals.
-    + inversion Hkeys as [|? ? Hkey Hkeys']; subst.
+    destruct keys as [|key keys].
+    + simpl.
+      split.
+      * constructor.
+      * split.
+        -- exact Hacc_keys.
+        -- exact Hacc_vals.
+    + destruct values as [|value values].
+      * simpl.
+        split.
+        -- constructor.
+        -- split.
+           ++ exact Hacc_keys.
+           ++ exact Hacc_vals.
+      * destruct grad_outputs as [|grad_out grad_outputs'].
+        -- simpl.
+           split.
+           ++ constructor.
+           ++ split.
+              ** exact Hacc_keys.
+              ** exact Hacc_vals.
+        -- simpl.
+           inversion Hkeys as [|? ? Hkey Hkeys']; subst.
       inversion Hvalues as [|? ? Hvalue Hvalues']; subst.
       inversion Hgrads as [|? ? Hgrad_out Hgrads']; subst.
       set (seen_keys' := seen_keys ++ [key]).

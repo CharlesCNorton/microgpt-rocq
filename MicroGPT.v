@@ -1069,11 +1069,13 @@ Lemma position_vector_row_ok :
     row_ok width (position_vector width pos).
 Proof.
   intros width pos.
-  destruct width as [|width']; simpl.
+  destruct width as [|width'].
   - reflexivity.
-  - destruct (Nat.eqb pos 0) eqn:Hpos.
+  - unfold row_ok, position_vector.
+    simpl.
+    destruct (Nat.eqb pos 0) eqn:Hpos.
     + apply row_ok_zero_vec.
-    + unfold row_ok.
+    + simpl.
       rewrite vec_scale_length.
       apply one_hot_vector_row_ok.
 Qed.

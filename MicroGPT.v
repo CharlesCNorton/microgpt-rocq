@@ -3290,6 +3290,9 @@ Proof.
         simpl in Hscaled.
         inversion Hscaled as [Hys].
         f_equal.
+        change
+          (length (vec_hadamard (map output_score_grad logits') ys)
+             = length logits').
         rewrite vec_hadamard_length.
         -- rewrite map_length.
            reflexivity.

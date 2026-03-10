@@ -2319,7 +2319,19 @@ Proof.
   - reflexivity.
   - destruct grads as [|grad grads']; simpl.
     + reflexivity.
-    + now rewrite IH.
+    + destruct (seq_of_matrix_backprops width w inputs grads') as
+        [weight_grad_rest input_grads_rest] eqn:Hrest.
+      simpl.
+      assert
+        (Hlen :
+           length input_grads_rest =
+           Nat.min (length inputs) (length grads')).
+      {
+        rewrite <- IH.
+        rewrite Hrest.
+        reflexivity.
+      }
+      now rewrite Hlen.
 Qed.
 
 Record FeedForwardBackprop := {

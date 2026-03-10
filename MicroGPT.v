@@ -3262,6 +3262,7 @@ Proof.
       apply vec_scale_row_ok.
       apply vec_sub_row_ok; assumption.
     }
+    subst gp.
     remember (sum_scalars (output_scores (logit :: logits'))) as denom.
     destruct (Qeq_bool denom 0).
     + apply row_ok_zero_vec.

@@ -3423,12 +3423,27 @@ Proof.
   intros d_model d_hidden w1 w2 inputs.
   induction inputs as [|input inputs IH];
     intros grads_out grad_w1 grad_w2 grad_inputs Hw1 Hw2 Hinputs Hgrads Heq.
-  - destruct grads_out; simpl in Heq;
-      inversion Heq; subst; repeat split; try apply zero_matrix_ok; constructor.
+  - destruct grads_out; simpl in Heq.
+    + inversion Heq; subst.
+      split.
+      * apply zero_matrix_ok.
+      * split.
+        -- apply zero_matrix_ok.
+        -- constructor.
+    + inversion Heq; subst.
+      split.
+      * apply zero_matrix_ok.
+      * split.
+        -- apply zero_matrix_ok.
+        -- constructor.
   - inversion Hinputs as [|? ? Hinput Hinputs']; subst.
     destruct grads_out as [|grad_out grads_out']; simpl in Heq.
     + inversion Heq; subst.
-      repeat split; try apply zero_matrix_ok; constructor.
+      split.
+      * apply zero_matrix_ok.
+      * split.
+        -- apply zero_matrix_ok.
+        -- constructor.
     + inversion Hgrads as [|? ? Hgrad_out Hgrads_out']; subst.
       remember (backprop_feed_forward d_model d_hidden w1 w2 input grad_out)
         as local eqn:Hlocal.

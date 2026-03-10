@@ -3563,6 +3563,8 @@ Definition demo2_full_train_loss_0_encoded :=
   encode_scalar demo2_full_train_loss_0.
 Definition demo2_full_train_loss_1_encoded :=
   encode_scalar demo2_full_train_loss_1.
+Definition demo2_full_train_grad_0_abs_sum_encoded :=
+  encode_scalar (model_grad_abs_sum demo2_full_train_grad_0).
 
 (**
   * Extraction.
@@ -3576,8 +3578,8 @@ Definition demo2_full_train_loss_1_encoded :=
   * 5. [ocamlopt microgpt_extracted.cmx main.cmx -o microgpt_demo]
   *
   * The small [main.ml] driver can then print the three demo inputs, their
-  * predictions, their encoded logits, and the encoded training quantities from
-  * the verified readout example.
+  * predictions, their encoded logits, the verified readout-training quantities,
+  * and the extracted whole-model training/decode demo values.
   *)
 
 Extraction Language OCaml.
@@ -3605,4 +3607,15 @@ Extraction "microgpt_extracted.ml"
   demo2_formal_prediction_4
   demo2_formal_generated_3
   demo2_formal_loss_0_encoded
-  demo2_formal_loss_4_encoded.
+  demo2_formal_loss_4_encoded
+  demo2_full_train_prompt
+  demo2_full_train_lr
+  demo2_full_train_loss_0_encoded
+  demo2_full_train_loss_1_encoded
+  demo2_full_train_grad_0_abs_sum_encoded
+  demo2_full_train_prediction_0
+  demo2_full_train_prediction_1
+  demo2_full_train_generated_2
+  demo2_full_train_top_k_generated_2
+  demo2_full_train_top_p_generated_2
+  demo2_full_adam_prediction_2.

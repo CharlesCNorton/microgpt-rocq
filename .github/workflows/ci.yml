@@ -46,4 +46,8 @@ jobs:
         shell: bash
         run: |
           set -eux
-          ./microgpt_demo
+          ./microgpt_demo | tee demo_output.txt
+          grep -q '^demo1$' demo_output.txt
+          grep -q '^formal_train_demo$' demo_output.txt
+          grep -q '^formal_full_model_demo$' demo_output.txt
+          grep -q '^runtime_train_demo$' demo_output.txt

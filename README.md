@@ -65,8 +65,10 @@ followed by explicit normalization by the prefix score sum. This keeps the atten
 
 The whole-model training and optimizer additions in the current file are executable
 and monolithic with the rest of the formalization. The strongest proof coverage
-still sits on the structural and output-head training surface; the new whole-model
-gradient path is present in the Rocq artifact and exercised by extraction/runtime.
+still sits on the structural and output-head training surface. The extracted
+runtime now also exposes a concrete whole-model demo surface for full-model
+gradient evaluation, one-step SGD, top-k and top-p decoding after training, and
+an Adam-side prediction checkpoint.
 
 ## Demos
 
@@ -85,6 +87,7 @@ The executable also prints:
 - the encoded reverse-mode gradients for the readout weights
 - the encoded reverse-mode gradient for the readout bias
 - a formal output-head training demo extracted from the Rocq development
+- a formal whole-model training and decoding demo extracted from the Rocq development
 - a runtime training demo over a tiny token corpus
 - a before/after loss trace for a cold output head trained against extracted hidden states
 - before/after greedy continuations for the trained output head
@@ -103,10 +106,10 @@ The Rocq development now contains two training surfaces:
 - a whole-model training path that backpropagates through embeddings, attention,
   the MLP, and the output projection, then drives SGD and Adam-style updates
 
-The executable keeps printing the lighter extracted demos and the OCaml-side
-runtime trainer. The heavier whole-model optimizer definitions live in the Rocq
-source and theorem-bearing build path without being forced through startup-time
-evaluation in the demo binary.
+The executable now prints both a formal output-head demo and a formal whole-model
+demo before the OCaml-side runtime trainer. The runtime trainer remains the
+lighter frozen-body path, while the extracted whole-model demo gives the build
+and CI path a concrete exercised surface for the heavier optimizer definitions.
 
 ## Build
 
@@ -129,7 +132,7 @@ GitHub Actions runs the same pipeline on every push and pull request:
 2. prove `MicroGPT.v`
 3. generate `microgpt_extracted.ml` and `microgpt_extracted.mli`
 4. build the OCaml executable
-5. run the executable
+5. run the executable and assert that the formal and runtime demo sections appear
 
 ## Next
 

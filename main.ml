@@ -162,6 +162,36 @@ let print_formal_training_demo () =
   Printf.printf "  trained_greedy=%s\n" (string_of_int_list M.demo2_formal_generated_3);
   Printf.printf "  trained_greedy_text=\"%s\"\n" (decode_tokens M.demo2_formal_generated_3)
 
+let print_formal_full_model_demo () =
+  Printf.printf "formal_full_model_demo\n";
+  Printf.printf "  prompt=%s\n" (string_of_int_list M.demo2_full_train_prompt);
+  Printf.printf "  prompt_text=\"%s\"\n" (decode_tokens M.demo2_full_train_prompt);
+  Printf.printf "  learning_rate=%s\n" (string_of_q M.demo2_full_train_lr);
+  Printf.printf "  initial_loss=%s\n"
+    (string_of_encoded_scalar M.demo2_full_train_loss_0_encoded);
+  Printf.printf "  initial_grad_abs_sum=%s\n"
+    (string_of_encoded_scalar M.demo2_full_train_grad_0_abs_sum_encoded);
+  Printf.printf "  initial_prediction=%s\n"
+    (word_of_token M.demo2_full_train_prediction_0);
+  Printf.printf "  sgd_loss_1=%s\n"
+    (string_of_encoded_scalar M.demo2_full_train_loss_1_encoded);
+  Printf.printf "  sgd_prediction_1=%s\n"
+    (word_of_token M.demo2_full_train_prediction_1);
+  Printf.printf "  sgd_greedy=%s\n"
+    (string_of_int_list M.demo2_full_train_generated_2);
+  Printf.printf "  sgd_greedy_text=\"%s\"\n"
+    (decode_tokens M.demo2_full_train_generated_2);
+  Printf.printf "  sgd_top_k=%s\n"
+    (string_of_int_list M.demo2_full_train_top_k_generated_2);
+  Printf.printf "  sgd_top_k_text=\"%s\"\n"
+    (decode_tokens M.demo2_full_train_top_k_generated_2);
+  Printf.printf "  sgd_top_p=%s\n"
+    (string_of_int_list M.demo2_full_train_top_p_generated_2);
+  Printf.printf "  sgd_top_p_text=\"%s\"\n"
+    (decode_tokens M.demo2_full_train_top_p_generated_2);
+  Printf.printf "  adam_prediction_2=%s\n"
+    (word_of_token M.demo2_full_adam_prediction_2)
+
 (* ------------------------------------------------------------------------- *)
 (* Frozen-body output-head training.                                         *)
 (* ------------------------------------------------------------------------- *)
@@ -555,5 +585,7 @@ let () =
     (string_of_q M.demo2_train_grad_bias);
   print_endline "";
   print_formal_training_demo ();
+  print_endline "";
+  print_formal_full_model_demo ();
   print_endline "";
   print_training_demo ()

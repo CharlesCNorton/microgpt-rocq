@@ -2449,6 +2449,319 @@ Definition backprop_causal_attention
     values
     grad_outputs.
 
+Lemma backprop_attend_aux_lengths :
+  forall width query keys values output grad_out denom,
+    length keys = length values ->
+    length (attend_back_keys
+      (backprop_attend_aux width query keys values output grad_out denom)) = length keys /\
+    length (attend_back_values
+      (backprop_attend_aux width query keys values output grad_out denom)) = length values.
+Proof.
+  intros width query keys.
+  induction keys as [|key keys IH]; intros values output grad_out denom Hlen.
+  - destruct values as [|value values]; simpl in *.
+    + split; reflexivity.
+    + discriminate.
+  - destruct values as [|value values]; simpl in *.
+    + discriminate.
+    + inversion Hlen as [Htail].
+      specialize (IH values output grad_out denom Htail).
+      destruct IH as [IHkeys IHvalues].
+      simpl.
+      split.
+      * now rewrite IHkeys.
+      * now rewrite IHvalues.
+Qed.
+
+Lemma backprop_attend_aux_ok :
+  forall width query keys values output grad_out denom,
+    row_ok width query ->
+    Forall (row_ok width) keys ->
+    Forall (row_ok width) values ->
+    row_ok width output ->
+    row_ok width grad_out ->
+    row_ok width
+      (attend_back_query
+        (backprop_attend_aux width query keys values output grad_out denom)) /\
+    Forall (row_ok width)
+      (attend_back_keys
+        (backprop_attend_aux width query keys values output grad_out denom)) /\
+    Forall (row_ok width)
+      (attend_back_values
+        (backprop_attend_aux width query keys values output grad_out denom)).
+Proof.
+  intros width query keys.
+  induction keys as [|key keys IH]; intros values output grad_out denom Hquery Hkeys Hvalues Houtput Hgrad_out.
+  - destruct values as [|value values]; simpl; repeat split; constructor.
+  - destruct values as [|value values]; simpl.
+    + repeat split; constructor.
+    + inversion Hkeys as [|? ? Hkey Hkeys']; subst.
+      inversion Hvalues as [|? ? Hvalue Hvalues']; subst.
+      specialize (IH values output grad_out denom Hquery Hkeys' Hvalues' Houtput Hgrad_out).
+      destruct IH as [IHquery [IHkeys IHvalues]].
+      split.
+      * apply vec_add_row_ok.
+        -- apply vec_scale_row_ok.
+           exact Hkey.
+        -- exact IHquery.
+      * split.
+        -- constructor.
+           ++ apply vec_scale_row_ok.
+              exact Hquery.
+           ++ exact IHkeys.
+        -- constructor.
+           ++ apply vec_scale_row_ok.
+              exact Hgrad_out.
+           ++ exact IHvalues.
+Qed.
+
+Lemma backprop_attend_lengths :
+  forall width query keys values grad_out,
+    length keys = length values ->
+    length (attend_back_keys (backprop_attend width query keys values grad_out)) = length keys /\
+    length (attend_back_values (backprop_attend width query keys values grad_out)) = length values.
+Proof.
+  intros width query keys values grad_out Hlen.
+  unfold backprop_attend.
+  destruct (Qeq_bool (attend_denominator query keys) 0); simpl.
+  - split.
+    + apply zero_sequence_length.
+    + apply zero_sequence_length.
+  - apply backprop_attend_aux_lengths.
+    exact Hlen.
+Qed.
+
+Lemma backprop_attend_ok :
+  forall width query keys values grad_out,
+    row_ok width query ->
+    Forall (row_ok width) keys ->
+    Forall (row_ok width) values ->
+    row_ok width grad_out ->
+    row_ok width (attend_back_query (backprop_attend width query keys values grad_out)) /\
+    Forall (row_ok width) (attend_back_keys (backprop_attend width query keys values grad_out)) /\
+    Forall (row_ok width) (attend_back_values (backprop_attend width query keys values grad_out)).
+Proof.
+  intros width query keys values grad_out Hquery Hkeys Hvalues Hgrad_out.
+  unfold backprop_attend.
+  destruct (Qeq_bool (attend_denominator query keys) 0); simpl.
+  - split.
+    + apply row_ok_zero_vec.
+    + split.
+      * apply zero_sequence_row_ok.
+      * apply zero_sequence_row_ok.
+  - apply backprop_attend_aux_ok.
+    + exact Hquery.
+    + exact Hkeys.
+    + exact Hvalues.
+    + apply attend_row_ok.
+      exact Hvalues.
+    + exact Hgrad_out.
+Qed.
+
+Lemma backprop_causal_attention_aux_ok :
+  forall width seen_keys seen_values acc_key_grads acc_value_grads
+    queries keys values grad_outputs,
+    length seen_keys = length seen_values ->
+    length acc_key_grads = length seen_keys ->
+    length acc_value_grads = length seen_values ->
+    Forall (row_ok width) seen_keys ->
+    Forall (row_ok width) seen_values ->
+    Forall (row_ok width) acc_key_grads ->
+    Forall (row_ok width) acc_value_grads ->
+    Forall (row_ok width) queries ->
+    Forall (row_ok width) keys ->
+    Forall (row_ok width) values ->
+    Forall (row_ok width) grad_outputs ->
+    Forall (row_ok width)
+      (fst (backprop_causal_attention_aux
+        width seen_keys seen_values acc_key_grads acc_value_grads
+        queries keys values grad_outputs)) /\
+    Forall (row_ok width)
+      (fst (snd (backprop_causal_attention_aux
+        width seen_keys seen_values acc_key_grads acc_value_grads
+        queries keys values grad_outputs))) /\
+    Forall (row_ok width)
+      (snd (snd (backprop_causal_attention_aux
+        width seen_keys seen_values acc_key_grads acc_value_grads
+        queries keys values grad_outputs))).
+Proof.
+  intros width seen_keys seen_values acc_key_grads acc_value_grads queries.
+  revert seen_keys seen_values acc_key_grads acc_value_grads keys values grad_outputs.
+  induction queries as [|query queries IH];
+    intros seen_keys seen_values acc_key_grads acc_value_grads keys values grad_outputs
+      Hseen_len Hacc_keys_len Hacc_vals_len Hseen_keys Hseen_values
+      Hacc_keys Hacc_vals Hqueries Hkeys Hvalues Hgrads.
+  - destruct keys, values, grad_outputs; simpl; repeat split; try constructor; assumption.
+  - inversion Hqueries as [|? ? Hquery Hqueries']; subst.
+    destruct keys as [|key keys]; destruct values as [|value values];
+      destruct grad_outputs as [|grad_out grad_outputs']; simpl;
+      repeat split; try constructor; try assumption.
+    + exact Hacc_keys.
+    + exact Hacc_vals.
+    + exact Hacc_keys.
+    + exact Hacc_vals.
+    + exact Hacc_keys.
+    + exact Hacc_vals.
+    + inversion Hkeys as [|? ? Hkey Hkeys']; subst.
+      inversion Hvalues as [|? ? Hvalue Hvalues']; subst.
+      inversion Hgrads as [|? ? Hgrad_out Hgrads']; subst.
+      set (seen_keys' := seen_keys ++ [key]).
+      set (seen_values' := seen_values ++ [value]).
+      set (local := backprop_attend width query seen_keys' seen_values' grad_out).
+      assert (Hlocal :
+        row_ok width (attend_back_query local) /\
+        Forall (row_ok width) (attend_back_keys local) /\
+        Forall (row_ok width) (attend_back_values local)).
+      {
+        subst local seen_keys' seen_values'.
+        apply backprop_attend_ok.
+        - exact Hquery.
+        - apply Forall_app.
+          split.
+          + exact Hseen_keys.
+          + constructor.
+            * exact Hkey.
+            * constructor.
+        - apply Forall_app.
+          split.
+          + exact Hseen_values.
+          + constructor.
+            * exact Hvalue.
+            * constructor.
+        - exact Hgrad_out.
+      }
+      destruct Hlocal as [Hlocal_query [Hlocal_keys Hlocal_values]].
+      assert (Hlocal_len :
+        length (attend_back_keys local) = length seen_keys' /\
+        length (attend_back_values local) = length seen_values').
+      {
+        subst local seen_keys' seen_values'.
+        apply backprop_attend_lengths.
+        rewrite app_length, app_length.
+        simpl.
+        exact (f_equal S Hseen_len).
+      }
+      destruct Hlocal_len as [Hlocal_keys_len Hlocal_values_len].
+      assert (Hacc_keys_app :
+        Forall (row_ok width) (acc_key_grads ++ [zero_vec width])).
+      {
+        apply Forall_app.
+        split.
+        - exact Hacc_keys.
+        - constructor.
+          + apply row_ok_zero_vec.
+          + constructor.
+      }
+      assert (Hacc_vals_app :
+        Forall (row_ok width) (acc_value_grads ++ [zero_vec width])).
+      {
+        apply Forall_app.
+        split.
+        - exact Hacc_vals.
+        - constructor.
+          + apply row_ok_zero_vec.
+          + constructor.
+      }
+      assert (Hacc_keys'_ok :
+        Forall (row_ok width)
+          (seq_add (attend_back_keys local) (acc_key_grads ++ [zero_vec width]))).
+      {
+        apply seq_add_row_ok.
+        - exact Hlocal_keys.
+        - exact Hacc_keys_app.
+        - rewrite app_length.
+          simpl.
+          rewrite Hacc_keys_len.
+          exact Hlocal_keys_len.
+      }
+      assert (Hacc_vals'_ok :
+        Forall (row_ok width)
+          (seq_add (attend_back_values local) (acc_value_grads ++ [zero_vec width]))).
+      {
+        apply seq_add_row_ok.
+        - exact Hlocal_values.
+        - exact Hacc_vals_app.
+        - rewrite app_length.
+          simpl.
+          rewrite Hacc_vals_len.
+          exact Hlocal_values_len.
+      }
+      assert (Hseen_keys' : Forall (row_ok width) seen_keys').
+      {
+        subst seen_keys'.
+        apply Forall_app.
+        split.
+        - exact Hseen_keys.
+        - constructor.
+          + exact Hkey.
+          + constructor.
+      }
+      assert (Hseen_values' : Forall (row_ok width) seen_values').
+      {
+        subst seen_values'.
+        apply Forall_app.
+        split.
+        - exact Hseen_values.
+        - constructor.
+          + exact Hvalue.
+          + constructor.
+      }
+      specialize (IH seen_keys' seen_values'
+        (seq_add (attend_back_keys local) (acc_key_grads ++ [zero_vec width]))
+        (seq_add (attend_back_values local) (acc_value_grads ++ [zero_vec width]))
+        keys values grad_outputs').
+      specialize (IH
+        (f_equal S Hseen_len)
+        Hlocal_keys_len
+        Hlocal_values_len).
+      specialize (IH
+        Hseen_keys'
+        Hseen_values'
+        Hacc_keys'_ok
+        Hacc_vals'_ok
+        Hqueries'
+        Hkeys'
+        Hvalues'
+        Hgrads').
+      destruct IH as [IHquery [IHkeys IHvalues]].
+      split.
+      * constructor.
+        -- exact Hlocal_query.
+        -- exact IHquery.
+      * split.
+        -- exact IHkeys.
+        -- exact IHvalues.
+Qed.
+
+Lemma backprop_causal_attention_ok :
+  forall width queries keys values grad_outputs,
+    Forall (row_ok width) queries ->
+    Forall (row_ok width) keys ->
+    Forall (row_ok width) values ->
+    Forall (row_ok width) grad_outputs ->
+    Forall (row_ok width)
+      (fst (backprop_causal_attention width queries keys values grad_outputs)) /\
+    Forall (row_ok width)
+      (fst (snd (backprop_causal_attention width queries keys values grad_outputs))) /\
+    Forall (row_ok width)
+      (snd (snd (backprop_causal_attention width queries keys values grad_outputs))).
+Proof.
+  intros width queries keys values grad_outputs Hqueries Hkeys Hvalues Hgrads.
+  unfold backprop_causal_attention.
+  apply backprop_causal_attention_aux_ok.
+  - reflexivity.
+  - reflexivity.
+  - reflexivity.
+  - constructor.
+  - constructor.
+  - constructor.
+  - constructor.
+  - exact Hqueries.
+  - exact Hkeys.
+  - exact Hvalues.
+  - exact Hgrads.
+Qed.
+
 Fixpoint embedding_grad_for_token
   (rows cols tok : nat)
   (grad : Vector)

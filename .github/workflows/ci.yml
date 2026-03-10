@@ -50,8 +50,24 @@ jobs:
               grep -q '^  final_runtime_loss=' demo_output.txt
               grep -q '^  initial_top_p=' demo_output.txt
               grep -q '^  final_top_p=' demo_output.txt
+              grep -q '^runtime_full_model_train_demo$' demo_output.txt
+              grep -q '^  initial_full_model_loss=' demo_output.txt
+              grep -q '^  final_full_model_loss=' demo_output.txt
+              grep -q '^  initial_full_model_prediction=' demo_output.txt
+              grep -q '^  final_full_model_prediction=' demo_output.txt
               initial=$(grep '^  initial_runtime_loss=' demo_output.txt | cut -d= -f2)
               final=$(grep '^  final_runtime_loss=' demo_output.txt | cut -d= -f2)
               awk -v initial="$initial" -v final="$final" 'BEGIN { exit !(final < initial) }'
+              initial_full=$(grep '^  initial_full_model_loss=' demo_output.txt | cut -d= -f2)
+              final_full=$(grep '^  final_full_model_loss=' demo_output.txt | cut -d= -f2)
+              awk -v initial="$initial_full" -v final="$final_full" 'BEGIN { exit !(final < initial) }'
+            endGroup
+            startGroup "Run sectioned executable paths"
+              MICROGPT_SECTION=runtime_head ./microgpt_demo data/demo_corpus.txt | tee runtime_head_output.txt
+              grep -q '^runtime_train_demo$' runtime_head_output.txt
+              if grep -q '^demo1$' runtime_head_output.txt; then exit 1; fi
+              MICROGPT_SECTION=runtime_full ./microgpt_demo data/demo_corpus.txt | tee runtime_full_output.txt
+              grep -q '^runtime_full_model_train_demo$' runtime_full_output.txt
+              if grep -q '^runtime_train_demo$' runtime_full_output.txt; then exit 1; fi
             endGroup
           uninstall: ''

@@ -1,4 +1,8 @@
 
+val fst : ('a1 * 'a2) -> 'a1
+
+val snd : ('a1 * 'a2) -> 'a2
+
 val length : 'a1 list -> int
 
 val app : 'a1 list -> 'a1 list -> 'a1 list
@@ -24,6 +28,8 @@ val tl : 'a1 list -> 'a1 list
 
 val last : 'a1 list -> 'a1 -> 'a1
 
+val combine : 'a1 list -> 'a2 list -> ('a1 * 'a2) list
+
 module Pos :
  sig
   val succ : int -> int
@@ -33,6 +39,11 @@ module Pos :
   val add_carry : int -> int -> int
 
   val pred_double : int -> int
+
+  type mask =
+  | IsNul
+  | IsPos of int
+  | IsNeg
 
   val mul : int -> int -> int
 
@@ -51,7 +62,37 @@ module Coq_Pos :
 
   val add_carry : int -> int -> int
 
+  val pred_double : int -> int
+
+  type mask = Pos.mask =
+  | IsNul
+  | IsPos of int
+  | IsNeg
+
+  val succ_double_mask : mask -> mask
+
+  val double_mask : mask -> mask
+
+  val double_pred_mask : int -> mask
+
+  val sub_mask : int -> int -> mask
+
+  val sub_mask_carry : int -> int -> mask
+
   val mul : int -> int -> int
+
+  val compare_cont : comparison -> int -> int -> comparison
+
+  val compare : int -> int -> comparison
+
+  val leb : int -> int -> bool
+
+  val sqrtrem_step :
+    (int -> int) -> (int -> int) -> (int * mask) -> int * mask
+
+  val sqrtrem : int -> int * mask
+
+  val sqrt : int -> int
 
   val iter_op : ('a1 -> 'a1 -> 'a1) -> int -> 'a1 -> 'a1
 
@@ -79,6 +120,8 @@ module Z :
   val leb : int -> int -> bool
 
   val eqb : int -> int -> bool
+
+  val sqrt : int -> int
  end
 
 type q = { qnum : int; qden : int }
@@ -143,7 +186,8 @@ val causal_attention_aux :
 val causal_attention :
   int -> vector list -> vector list -> vector list -> vector list
 
-type hyperParams = { hp_vocab : int; hp_d_model : int; hp_d_hidden : int }
+type hyperParams = { hp_vocab : int; hp_d_model : int; hp_d_hidden : 
+                     int; hp_layers : int }
 
 type model = { model_embeddings : matrix; model_w_q : matrix;
                model_w_k : matrix; model_w_v : matrix; model_w_o : matrix;
@@ -158,29 +202,34 @@ val logits_for_hidden : model -> vector -> vector
 
 val transformer_block : hyperParams -> model -> vector list -> vector list
 
+val transformer_stack :
+  int -> hyperParams -> model -> vector list -> vector list
+
 val hidden_states : hyperParams -> model -> int list -> vector list
 
 val forward : hyperParams -> model -> int list -> vector list
-
-val argmax_aux : int -> scalar -> int -> vector -> int
-
-val argmax : vector -> int
-
-val predict_next : hyperParams -> model -> int list -> int
-
-val sum_scalars : scalar list -> scalar
-
-val mean_scalars : scalar list -> scalar
 
 val one_hot_vector_aux : int -> int -> int -> vector
 
 val one_hot_vector : int -> int -> vector
 
+val argmax_aux : int -> scalar -> int -> vector -> int
+
+val argmax : vector -> int
+
+val sum_scalars : scalar list -> scalar
+
+val mean_scalars : scalar list -> scalar
+
 val output_score : scalar -> scalar
+
+val output_score_grad : scalar -> scalar
 
 val output_scores : vector -> vector
 
 val normalized_output_distribution : vector -> vector
+
+val predict_next : hyperParams -> model -> int list -> int
 
 val lm_square : scalar -> scalar
 
@@ -270,6 +319,202 @@ val apply_output_head_sgd_step :
 val train_output_head_sgd :
   int -> scalar -> hyperParams -> model -> batch -> model
 
+val const_vec : int -> scalar -> vector
+
+val zero_sequence : int -> int -> vector list
+
+val vec_hadamard : vector -> vector -> vector
+
+val vec_square : vector -> vector
+
+val vec_div_safe : vector -> vector -> vector
+
+val vec_relu_mask : vector -> vector
+
+val relu_backprop : vector -> vector -> vector
+
+val outer_product : vector -> vector -> matrix
+
+val mat_T_vec_mul : int -> matrix -> vector -> vector
+
+val matrix_div_safe : matrix -> matrix -> matrix
+
+val matrix_square : matrix -> matrix
+
+val matrix_add_eps : scalar -> matrix -> matrix
+
+val scalar_abs : scalar -> scalar
+
+val vec_abs_sum : vector -> scalar
+
+val matrix_abs_sum : matrix -> scalar
+
+val scalar_sqrt_floor : scalar -> scalar
+
+val matrix_sqrt_floor : matrix -> matrix
+
+val seq_of_matrix_backprops :
+  int -> matrix -> vector list -> vector list -> matrix * vector list
+
+type feedForwardBackprop = { ff_back_w1 : matrix; ff_back_w2 : matrix;
+                             ff_back_input : vector }
+
+val backprop_feed_forward :
+  int -> int -> matrix -> matrix -> vector -> vector -> feedForwardBackprop
+
+val backprop_feed_forward_sequence :
+  int -> int -> matrix -> matrix -> vector list -> vector list ->
+  (matrix * matrix) * vector list
+
+type attendBackprop = { attend_back_query : vector;
+                        attend_back_keys : vector list;
+                        attend_back_values : vector list }
+
+val backprop_attend_aux :
+  int -> vector -> vector list -> vector list -> vector -> vector -> scalar
+  -> attendBackprop
+
+val backprop_attend :
+  int -> vector -> vector list -> vector list -> vector -> attendBackprop
+
+val backprop_causal_attention_aux :
+  int -> vector list -> vector list -> vector list -> vector list -> vector
+  list -> vector list -> vector list -> vector list -> (vector list * vector
+  list) * vector list
+
+val backprop_causal_attention :
+  int -> vector list -> vector list -> vector list -> vector list -> (vector
+  list * vector list) * vector list
+
+val embedding_grad_for_token : int -> int -> int -> vector -> matrix
+
+val embedding_grads_from_inputs :
+  int -> int -> int list -> vector list -> matrix
+
+type modelGrad = { grad_model_embeddings : matrix; grad_model_w_q : matrix;
+                   grad_model_w_k : matrix; grad_model_w_v : matrix;
+                   grad_model_w_o : matrix; grad_model_w_1 : matrix;
+                   grad_model_w_2 : matrix; grad_model_out_proj : matrix }
+
+val zero_model_grad : hyperParams -> modelGrad
+
+val model_grad_add : modelGrad -> modelGrad -> modelGrad
+
+val model_grad_scale : scalar -> modelGrad -> modelGrad
+
+val model_grad_square : modelGrad -> modelGrad
+
+val model_grad_div_safe : modelGrad -> modelGrad -> modelGrad
+
+val model_grad_sqrt_floor : modelGrad -> modelGrad
+
+val model_grad_add_eps : scalar -> modelGrad -> modelGrad
+
+val model_apply_grad : model -> modelGrad -> model
+
+val model_grad_abs_sum : modelGrad -> scalar
+
+val normalize_model_grad : modelGrad -> modelGrad
+
+val scalar_pow : scalar -> int -> scalar
+
+type transformerTape = { tape_tokens_full : int list;
+                         tape_embed : vector list;
+                         tape_queries_full : vector list;
+                         tape_keys_full : vector list;
+                         tape_values_full : vector list;
+                         tape_attended_full : vector list;
+                         tape_mixed_full : vector list;
+                         tape_resid1_full : vector list;
+                         tape_ff_pre1_full : vector list;
+                         tape_ff_hidden_full : vector list;
+                         tape_ff_out_full : vector list;
+                         tape_hidden1_full : vector list;
+                         tape_logits_full : vector list }
+
+val build_transformer_tape :
+  hyperParams -> model -> int list -> transformerTape
+
+val token_distribution_loss_grad : vector -> int -> vector
+
+val sequence_logits_loss_grad_raw : vector list -> int list -> vector list
+
+val full_model_grad_from_tape :
+  hyperParams -> model -> transformerTape -> modelGrad
+
+val full_model_grad_tokens : hyperParams -> model -> int list -> modelGrad
+
+val full_model_grad_batch_sum : hyperParams -> model -> batch -> modelGrad
+
+val full_model_grad_batch : hyperParams -> model -> batch -> modelGrad
+
+val model_batch_loss : hyperParams -> model -> batch -> scalar
+
+val apply_model_sgd_step : scalar -> hyperParams -> model -> batch -> model
+
+val train_model_sgd : int -> scalar -> hyperParams -> model -> batch -> model
+
+type adamState = { adam_model : model; adam_moment_1 : modelGrad;
+                   adam_moment_2 : modelGrad; adam_steps : int }
+
+val zero_adam_state : hyperParams -> model -> adamState
+
+val adam_bias_correction : scalar -> int -> scalar
+
+val apply_model_adam_step :
+  scalar -> scalar -> scalar -> scalar -> hyperParams -> adamState -> batch
+  -> adamState
+
+val train_model_adam :
+  int -> scalar -> scalar -> scalar -> scalar -> hyperParams -> adamState ->
+  batch -> adamState
+
+val encode_demo_token : int -> int
+
+val decode_demo_token : int -> int
+
+val encode_demo_sequence : int list -> int list
+
+val decode_demo_sequence : int list -> int list
+
+type token_prob_pair = int * scalar
+
+val enumerate_vector_from : int -> vector -> token_prob_pair list
+
+val pair_prob : token_prob_pair -> scalar
+
+val insert_pair_desc :
+  token_prob_pair -> token_prob_pair list -> token_prob_pair list
+
+val sort_pairs_desc : token_prob_pair list -> token_prob_pair list
+
+val temperature_scale_logits : scalar -> vector -> vector
+
+val normalized_pairs_of_logits : scalar -> vector -> token_prob_pair list
+
+val renormalize_pairs : token_prob_pair list -> token_prob_pair list
+
+val top_k_pairs : scalar -> vector -> int -> token_prob_pair list
+
+val take_until_mass :
+  scalar -> scalar -> token_prob_pair list -> token_prob_pair list
+
+val top_p_pairs : scalar -> scalar -> vector -> token_prob_pair list
+
+val top_pair_token : int -> token_prob_pair list -> int
+
+val predict_next_top_k :
+  hyperParams -> model -> scalar -> int -> int list -> int
+
+val predict_next_top_p :
+  hyperParams -> model -> scalar -> scalar -> int list -> int
+
+val greedy_generate_top_k :
+  int -> hyperParams -> model -> scalar -> int -> int list -> int list
+
+val greedy_generate_top_p :
+  int -> hyperParams -> model -> scalar -> scalar -> int list -> int list
+
 val demo1_hp : hyperParams
 
 val demo1_model : model
@@ -344,6 +589,34 @@ val demo2_formal_prediction_4 : int
 
 val demo2_formal_generated_3 : int list
 
+val demo2_full_train_batch : batch
+
+val demo2_full_train_prompt : int list
+
+val demo2_full_train_lr : scalar
+
+val demo2_full_train_loss_0 : scalar
+
+val demo2_full_train_grad_0 : modelGrad
+
+val demo2_full_train_model_1 : model
+
+val demo2_full_train_loss_1 : scalar
+
+val demo2_full_train_prediction_0 : int
+
+val demo2_full_train_prediction_1 : int
+
+val demo2_full_train_generated_2 : int list
+
+val demo2_full_train_top_k_generated_2 : int list
+
+val demo2_full_train_top_p_generated_2 : int list
+
+val demo2_full_adam_state_2 : adamState
+
+val demo2_full_adam_prediction_2 : int
+
 type encoded_scalar = int * int
 
 val encode_scalar : scalar -> encoded_scalar
@@ -371,3 +644,9 @@ val demo2_train_grad_bias_encoded : encoded_scalar
 val demo2_formal_loss_0_encoded : encoded_scalar
 
 val demo2_formal_loss_4_encoded : encoded_scalar
+
+val demo2_full_train_loss_0_encoded : encoded_scalar
+
+val demo2_full_train_loss_1_encoded : encoded_scalar
+
+val demo2_full_train_grad_0_abs_sum_encoded : encoded_scalar

@@ -179,7 +179,7 @@ Lemma map_row_ok :
 Proof.
   intros width f xs Hxs.
   unfold row_ok in *.
-  now rewrite map_length.
+  now rewrite length_map.
 Qed.
 
 Lemma vec_add_length :
@@ -2678,7 +2678,7 @@ Proof.
     {
       subst local seen_keys' seen_values'.
       apply backprop_attend_lengths.
-      rewrite !app_length.
+      rewrite !length_app.
       simpl.
       lia.
     }
@@ -2689,11 +2689,11 @@ Proof.
     {
       rewrite seq_add_length.
       - exact Hlocal_keys_len.
-      - rewrite app_length.
+      - rewrite length_app.
         simpl.
         rewrite Hacc_keys_len.
         subst seen_keys'.
-        rewrite app_length in Hlocal_keys_len.
+        rewrite length_app in Hlocal_keys_len.
         simpl in Hlocal_keys_len.
         exact Hlocal_keys_len.
     }
@@ -2703,18 +2703,18 @@ Proof.
     {
       rewrite seq_add_length.
       - exact Hlocal_values_len.
-      - rewrite app_length.
+      - rewrite length_app.
         simpl.
         rewrite Hacc_vals_len.
         subst seen_values'.
-        rewrite app_length in Hlocal_values_len.
+        rewrite length_app in Hlocal_values_len.
         simpl in Hlocal_values_len.
         exact Hlocal_values_len.
     }
     assert (Hseen_len' : length seen_keys' = length seen_values').
     {
       subst seen_keys' seen_values'.
-      rewrite !app_length.
+      rewrite !length_app.
       simpl.
       lia.
     }
@@ -2760,7 +2760,7 @@ Proof.
         simpl.
         rewrite IHkeys.
         rewrite Hacc_keys_len'.
-        rewrite app_length.
+        rewrite length_app.
         simpl.
         lia.
       * cbn [backprop_causal_attention_aux fst snd].
@@ -2769,7 +2769,7 @@ Proof.
         simpl.
         rewrite IHvalues.
         rewrite Hacc_vals_len'.
-        rewrite app_length.
+        rewrite length_app.
         simpl.
         lia.
 Qed.
@@ -2889,7 +2889,7 @@ Proof.
       {
         subst local seen_keys' seen_values'.
         apply backprop_attend_lengths.
-        rewrite !app_length.
+        rewrite !length_app.
         simpl.
         lia.
       }
@@ -2921,11 +2921,11 @@ Proof.
         apply seq_add_row_ok.
         - exact Hlocal_keys.
         - exact Hacc_keys_app.
-        - rewrite app_length.
+        - rewrite length_app.
           simpl.
           rewrite Hacc_keys_len.
           subst seen_keys'.
-          rewrite app_length in Hlocal_keys_len.
+          rewrite length_app in Hlocal_keys_len.
           simpl in Hlocal_keys_len.
           exact Hlocal_keys_len.
       }
@@ -2936,11 +2936,11 @@ Proof.
       {
         rewrite seq_add_length.
         - exact Hlocal_keys_len.
-        - rewrite app_length.
+        - rewrite length_app.
           simpl.
           rewrite Hacc_keys_len.
           subst seen_keys'.
-          rewrite app_length in Hlocal_keys_len.
+          rewrite length_app in Hlocal_keys_len.
           simpl in Hlocal_keys_len.
           exact Hlocal_keys_len.
       }
@@ -2951,11 +2951,11 @@ Proof.
         apply seq_add_row_ok.
         - exact Hlocal_values.
         - exact Hacc_vals_app.
-        - rewrite app_length.
+        - rewrite length_app.
           simpl.
           rewrite Hacc_vals_len.
           subst seen_values'.
-          rewrite app_length in Hlocal_values_len.
+          rewrite length_app in Hlocal_values_len.
           simpl in Hlocal_values_len.
           exact Hlocal_values_len.
       }
@@ -2966,11 +2966,11 @@ Proof.
       {
         rewrite seq_add_length.
         - exact Hlocal_values_len.
-        - rewrite app_length.
+        - rewrite length_app.
           simpl.
           rewrite Hacc_vals_len.
           subst seen_values'.
-          rewrite app_length in Hlocal_values_len.
+          rewrite length_app in Hlocal_values_len.
           simpl in Hlocal_values_len.
           exact Hlocal_values_len.
       }
@@ -2997,7 +2997,7 @@ Proof.
       assert (Hseen_len' : length seen_keys' = length seen_values').
       {
         subst seen_keys' seen_values'.
-        rewrite !app_length.
+        rewrite !length_app.
         simpl.
         lia.
       }
@@ -3304,7 +3304,7 @@ Lemma vec_div_safe_length :
 Proof.
   intros xs ys Hlen.
   unfold vec_div_safe.
-  rewrite length_map, combine_length.
+  rewrite length_map, length_combine.
   rewrite Hlen.
   apply Nat.min_id.
 Qed.

@@ -589,11 +589,11 @@ Lemma causal_attention_aux_firstn :
       (firstn n queries) (firstn n keys) (firstn n values).
 Proof.
   induction n as [|n IH]; intros width seen_keys seen_values queries keys values.
-  - destruct queries, keys, values; reflexivity.
+  - destruct queries, keys, values; cbn [firstn causal_attention_aux]; reflexivity.
   - destruct queries as [|query queries];
       destruct keys as [|key keys];
       destruct values as [|value values];
-      simpl; try reflexivity.
+      cbn [firstn causal_attention_aux]; try reflexivity.
     f_equal.
     apply IH.
 Qed.

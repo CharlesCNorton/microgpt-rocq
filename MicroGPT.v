@@ -2705,6 +2705,9 @@ Proof.
         - rewrite app_length.
           simpl.
           rewrite Hacc_keys_len.
+          subst seen_keys'.
+          rewrite app_length in Hlocal_keys_len.
+          simpl in Hlocal_keys_len.
           exact Hlocal_keys_len.
       }
       assert (Hacc_vals'_ok :
@@ -2717,6 +2720,9 @@ Proof.
         - rewrite app_length.
           simpl.
           rewrite Hacc_vals_len.
+          subst seen_values'.
+          rewrite app_length in Hlocal_values_len.
+          simpl in Hlocal_values_len.
           exact Hlocal_values_len.
       }
       assert (Hseen_keys' : Forall (row_ok width) seen_keys').

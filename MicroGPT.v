@@ -3398,13 +3398,14 @@ Proof.
       exact Hpre1.
     - exact Hgrad_hidden.
   }
-  repeat split.
+  split.
   - cbn.
     apply outer_product_ok; assumption.
-  - cbn.
-    apply outer_product_ok; assumption.
-  - cbn.
-    eapply mat_T_vec_mul_row_ok; eauto.
+  - split.
+    + cbn.
+      apply outer_product_ok; assumption.
+    + cbn.
+      eapply mat_T_vec_mul_row_ok; eauto.
 Qed.
 
 Lemma backprop_feed_forward_sequence_ok :

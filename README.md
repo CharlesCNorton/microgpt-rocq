@@ -18,6 +18,7 @@ Implemented pieces:
 - token embeddings
 - query/key/value projections
 - causal self-attention
+- shared-weight stacked transformer depth controlled by hyperparameters
 - an MLP block
 - output logits
 - normalized output distributions

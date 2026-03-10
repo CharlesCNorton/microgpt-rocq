@@ -591,7 +591,8 @@ Qed.
 Record HyperParams := {
   hp_vocab : nat;
   hp_d_model : nat;
-  hp_d_hidden : nat
+  hp_d_hidden : nat;
+  hp_layers : nat
 }.
 
 Record Model := {
@@ -651,16 +652,41 @@ Definition transformer_block_recompute
   let ff := map (feed_forward (model_w_1 m) (model_w_2 m)) resid1 in
   seq_add resid1 ff.
 
+Fixpoint transformer_stack
+  (layers : nat)
+  (hp : HyperParams)
+  (m : Model)
+  (hidden : list Vector)
+  : list Vector :=
+  match layers with
+  | O => hidden
+  | S layers' =>
+      transformer_stack layers' hp m (transformer_block hp m hidden)
+  end.
+
+Fixpoint transformer_stack_recompute
+  (layers : nat)
+  (hp : HyperParams)
+  (m : Model)
+  (hidden : list Vector)
+  : list Vector :=
+  match layers with
+  | O => hidden
+  | S layers' =>
+      transformer_stack_recompute layers' hp m
+        (transformer_block_recompute hp m hidden)
+  end.
+
 Definition hidden_states (hp : HyperParams) (m : Model) (tokens : list nat)
   : list Vector :=
-  transformer_block hp m (embed_tokens hp m tokens).
+  transformer_stack (hp_layers hp) hp m (embed_tokens hp m tokens).
 
 Definition hidden_states_recompute
   (hp : HyperParams)
   (m : Model)
   (tokens : list nat)
   : list Vector :=
-  transformer_block_recompute hp m (embed_tokens hp m tokens).
+  transformer_stack_recompute (hp_layers hp) hp m (embed_tokens hp m tokens).
 
 Definition forward (hp : HyperParams) (m : Model) (tokens : list nat)
   : list Vector :=
@@ -825,6 +851,49 @@ Proof.
   - now rewrite !project_all_length.
 Qed.
 
+Lemma transformer_stack_length :
+  forall layers hp m hidden,
+    model_wf hp m ->
+    length (transformer_stack layers hp m hidden) = length hidden.
+Proof.
+  intros layers hp m hidden Hwf.
+  induction layers as [|layers IH]; simpl.
+  - reflexivity.
+  - rewrite IH.
+    + apply transformer_block_length.
+      exact Hwf.
+    + exact Hwf.
+Qed.
+
+Lemma transformer_stack_row_ok :
+  forall layers hp m hidden,
+    model_wf hp m ->
+    Forall (row_ok (hp_d_model hp)) hidden ->
+    Forall (row_ok (hp_d_model hp))
+      (transformer_stack layers hp m hidden).
+Proof.
+  intros layers hp m hidden Hwf Hhidden.
+  induction layers as [|layers IH]; simpl.
+  - exact Hhidden.
+  - apply IH.
+    + exact Hwf.
+    + apply transformer_block_row_ok.
+      * exact Hwf.
+      * exact Hhidden.
+Qed.
+
+Lemma transformer_stack_recompute_eq :
+  forall layers hp m hidden,
+    transformer_stack layers hp m hidden =
+    transformer_stack_recompute layers hp m hidden.
+Proof.
+  intros layers hp m hidden.
+  induction layers as [|layers IH]; simpl.
+  - reflexivity.
+  - rewrite transformer_block_recompute_eq.
+    apply IH.
+Qed.
+
 Lemma hidden_states_length :
   forall hp m tokens,
     model_wf hp m ->
@@ -832,7 +901,7 @@ Lemma hidden_states_length :
 Proof.
   intros hp m tokens Hwf.
   unfold hidden_states.
-  rewrite transformer_block_length; auto.
+  rewrite transformer_stack_length; auto.
   apply embed_tokens_length.
 Qed.
 
@@ -843,7 +912,7 @@ Lemma hidden_states_row_ok :
 Proof.
   intros hp m tokens Hwf.
   unfold hidden_states.
-  apply transformer_block_row_ok.
+  apply transformer_stack_row_ok.
   - exact Hwf.
   - apply embed_tokens_row_ok.
     exact Hwf.
@@ -855,7 +924,7 @@ Lemma hidden_states_recompute_eq :
 Proof.
   intros hp m tokens.
   unfold hidden_states, hidden_states_recompute.
-  apply transformer_block_recompute_eq.
+  apply transformer_stack_recompute_eq.
 Qed.
 
 Lemma forward_length :
@@ -1080,6 +1149,7 @@ Proof.
   unfold output_score.
   destruct (Qle_bool logit 0) eqn:Hle.
   - apply Qle_bool_iff in Hle.
+    change (0 < / (1 - logit)).
     apply Qinv_lt_0_compat.
     lra.
   - assert (~ logit <= 0) as Hnle.
@@ -3142,7 +3212,7 @@ Fixpoint greedy_generate_top_p
 (** * Concrete demos. *)
 
 Definition demo1_hp : HyperParams :=
-  {| hp_vocab := 4; hp_d_model := 2; hp_d_hidden := 3 |}.
+  {| hp_vocab := 4; hp_d_model := 2; hp_d_hidden := 3; hp_layers := 1 |}.
 
 Definition demo1_model : Model :=
   {|
@@ -3258,7 +3328,7 @@ Proof.
 Qed.
 
 Definition demo2_hp : HyperParams :=
-  {| hp_vocab := 3; hp_d_model := 2; hp_d_hidden := 2 |}.
+  {| hp_vocab := 3; hp_d_model := 2; hp_d_hidden := 2; hp_layers := 1 |}.
 
 Definition demo2_model : Model :=
   {|
@@ -3319,7 +3389,7 @@ Proof.
 Qed.
 
 Definition demo3_hp : HyperParams :=
-  {| hp_vocab := 4; hp_d_model := 2; hp_d_hidden := 2 |}.
+  {| hp_vocab := 4; hp_d_model := 2; hp_d_hidden := 2; hp_layers := 1 |}.
 
 Definition demo3_model : Model :=
   {|

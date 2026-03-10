@@ -887,8 +887,8 @@ Lemma transformer_stack_recompute_eq :
     transformer_stack layers hp m hidden =
     transformer_stack_recompute layers hp m hidden.
 Proof.
-  intros layers hp m hidden.
-  induction layers as [|layers IH]; simpl.
+  intros layers hp m.
+  induction layers as [|layers IH]; intros hidden; simpl.
   - reflexivity.
   - rewrite transformer_block_recompute_eq.
     apply IH.

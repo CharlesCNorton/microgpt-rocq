@@ -2605,7 +2605,7 @@ Lemma backprop_causal_attention_aux_ok :
         width seen_keys seen_values acc_key_grads acc_value_grads
         queries keys values grad_outputs)).
 Proof.
-  intros width seen_keys seen_values acc_key_grads acc_value_grads queries.
+  intros width seen_keys seen_values acc_key_grads acc_value_grads queries keys values grad_outputs.
   revert seen_keys seen_values acc_key_grads acc_value_grads keys values grad_outputs.
   induction queries as [|query queries IH];
     intros seen_keys seen_values acc_key_grads acc_value_grads keys values grad_outputs

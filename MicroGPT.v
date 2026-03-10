@@ -3272,7 +3272,9 @@ Proof.
         apply vec_scale_row_ok.
         apply vec_sub_row_ok.
         - exact Hgp.
-        - apply row_ok_const_vec.
+        - unfold row_ok, const_vec.
+          rewrite repeat_length.
+          exact Hgp.
       }
       destruct scaled as [|y ys].
       * unfold row_ok in Hscaled.

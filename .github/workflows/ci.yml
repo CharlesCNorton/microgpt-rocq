@@ -7,36 +7,24 @@ on:
 jobs:
   build:
     runs-on: ubuntu-24.04
+    container:
+      image: rocq/rocq-prover:9.0-native-ocaml-4.14
+      options: --user 0:0
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up OCaml
-        uses: ocaml/setup-ocaml@v3
-        with:
-          ocaml-compiler: 4.14.2
-
-      - name: Install Rocq
-        shell: bash
-        run: |
-          set -eux
-          eval "$(opam env)"
-          opam repo add coq-released https://coq.inria.fr/opam/released
-          opam install -y coq.9.0.0
-
       - name: Prove and extract
         shell: bash
         run: |
           set -eux
-          eval "$(opam env)"
           coqc MicroGPT.v
 
       - name: Build OCaml executable
         shell: bash
         run: |
           set -eux
-          eval "$(opam env)"
           ocamlopt -c microgpt_extracted.mli
           ocamlopt -c microgpt_extracted.ml
           ocamlopt -c main.ml
@@ -61,13 +49,6 @@ jobs:
           grep -q '^  final_runtime_loss=' demo_output.txt
           grep -q '^  initial_top_p=' demo_output.txt
           grep -q '^  final_top_p=' demo_output.txt
-          python3 - <<'PY'
-          import re
-          from pathlib import Path
-
-          text = Path("demo_output.txt").read_text(encoding="utf-8")
-          initial = float(re.search(r"^  initial_runtime_loss=([0-9.]+)$", text, re.M).group(1))
-          final = float(re.search(r"^  final_runtime_loss=([0-9.]+)$", text, re.M).group(1))
-          if not final < initial:
-              raise SystemExit(f"expected runtime loss to decrease, got initial={initial} final={final}")
-          PY
+          initial=$(grep '^  initial_runtime_loss=' demo_output.txt | cut -d= -f2)
+          final=$(grep '^  final_runtime_loss=' demo_output.txt | cut -d= -f2)
+          awk -v initial="$initial" -v final="$final" 'BEGIN { exit !(final < initial) }'

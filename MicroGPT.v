@@ -2446,7 +2446,8 @@ Lemma matrix_div_safe_ok :
 Proof.
   intros rows cols a b [Ha_len Ha_rows] [Hb_len Hb_rows].
   split.
-  - revert b Hb_len.
+  - clear Hb_rows.
+    revert b Hb_len.
     induction a as [|row_a a' IH]; intros b Hb_len.
     + destruct b; simpl in *; auto; discriminate.
     + destruct b as [|row_b b']; simpl in *; try discriminate.

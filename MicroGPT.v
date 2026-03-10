@@ -2535,7 +2535,15 @@ Proof.
   destruct Ha as [Ha_emb [Ha_q [Ha_k [Ha_v [Ha_o [Ha_1 [Ha_2 Ha_out]]]]]]].
   destruct Hb as [Hb_emb [Hb_q [Hb_k [Hb_v [Hb_o [Hb_1 [Hb_2 Hb_out]]]]]]].
   unfold model_grad_add.
-  repeat split; apply matrix_add_ok; assumption.
+  repeat split.
+  - apply matrix_add_ok; assumption.
+  - apply matrix_add_ok; assumption.
+  - apply matrix_add_ok; assumption.
+  - apply matrix_add_ok; assumption.
+  - apply matrix_add_ok; assumption.
+  - apply matrix_add_ok; assumption.
+  - apply matrix_add_ok; assumption.
+  - apply matrix_add_ok; assumption.
 Qed.
 
 Lemma model_grad_wf_scale :
@@ -2547,7 +2555,15 @@ Proof.
   unfold model_grad_wf in *.
   destruct Hg as [Hemb [Hq [Hk [Hv [Ho [H1 [H2 Hout]]]]]]].
   unfold model_grad_scale.
-  repeat split; apply matrix_scale_ok; assumption.
+  repeat split.
+  - apply matrix_scale_ok; assumption.
+  - apply matrix_scale_ok; assumption.
+  - apply matrix_scale_ok; assumption.
+  - apply matrix_scale_ok; assumption.
+  - apply matrix_scale_ok; assumption.
+  - apply matrix_scale_ok; assumption.
+  - apply matrix_scale_ok; assumption.
+  - apply matrix_scale_ok; assumption.
 Qed.
 
 Lemma model_grad_wf_square :
@@ -2559,7 +2575,15 @@ Proof.
   unfold model_grad_wf in *.
   destruct Hg as [Hemb [Hq [Hk [Hv [Ho [H1 [H2 Hout]]]]]]].
   unfold model_grad_square.
-  repeat split; apply matrix_square_ok; assumption.
+  repeat split.
+  - apply matrix_square_ok; assumption.
+  - apply matrix_square_ok; assumption.
+  - apply matrix_square_ok; assumption.
+  - apply matrix_square_ok; assumption.
+  - apply matrix_square_ok; assumption.
+  - apply matrix_square_ok; assumption.
+  - apply matrix_square_ok; assumption.
+  - apply matrix_square_ok; assumption.
 Qed.
 
 Lemma model_grad_wf_div_safe :
@@ -2573,7 +2597,15 @@ Proof.
   destruct Ha as [Ha_emb [Ha_q [Ha_k [Ha_v [Ha_o [Ha_1 [Ha_2 Ha_out]]]]]]].
   destruct Hb as [Hb_emb [Hb_q [Hb_k [Hb_v [Hb_o [Hb_1 [Hb_2 Hb_out]]]]]]].
   unfold model_grad_div_safe.
-  repeat split; apply matrix_div_safe_ok; assumption.
+  repeat split.
+  - apply matrix_div_safe_ok; assumption.
+  - apply matrix_div_safe_ok; assumption.
+  - apply matrix_div_safe_ok; assumption.
+  - apply matrix_div_safe_ok; assumption.
+  - apply matrix_div_safe_ok; assumption.
+  - apply matrix_div_safe_ok; assumption.
+  - apply matrix_div_safe_ok; assumption.
+  - apply matrix_div_safe_ok; assumption.
 Qed.
 
 Lemma model_grad_wf_sqrt_floor :
@@ -2585,7 +2617,15 @@ Proof.
   unfold model_grad_wf in *.
   destruct Hg as [Hemb [Hq [Hk [Hv [Ho [H1 [H2 Hout]]]]]]].
   unfold model_grad_sqrt_floor.
-  repeat split; apply matrix_sqrt_floor_ok; assumption.
+  repeat split.
+  - apply matrix_sqrt_floor_ok; assumption.
+  - apply matrix_sqrt_floor_ok; assumption.
+  - apply matrix_sqrt_floor_ok; assumption.
+  - apply matrix_sqrt_floor_ok; assumption.
+  - apply matrix_sqrt_floor_ok; assumption.
+  - apply matrix_sqrt_floor_ok; assumption.
+  - apply matrix_sqrt_floor_ok; assumption.
+  - apply matrix_sqrt_floor_ok; assumption.
 Qed.
 
 Lemma model_grad_wf_add_eps :
@@ -2597,7 +2637,15 @@ Proof.
   unfold model_grad_wf in *.
   destruct Hg as [Hemb [Hq [Hk [Hv [Ho [H1 [H2 Hout]]]]]]].
   unfold model_grad_add_eps.
-  repeat split; apply matrix_add_eps_ok; assumption.
+  repeat split.
+  - apply matrix_add_eps_ok; assumption.
+  - apply matrix_add_eps_ok; assumption.
+  - apply matrix_add_eps_ok; assumption.
+  - apply matrix_add_eps_ok; assumption.
+  - apply matrix_add_eps_ok; assumption.
+  - apply matrix_add_eps_ok; assumption.
+  - apply matrix_add_eps_ok; assumption.
+  - apply matrix_add_eps_ok; assumption.
 Qed.
 
 Lemma normalize_model_grad_wf :
@@ -2623,7 +2671,15 @@ Proof.
   destruct Hm as [Hm_emb [Hm_q [Hm_k [Hm_v [Hm_o [Hm_1 [Hm_2 Hm_out]]]]]]].
   destruct Hg as [Hg_emb [Hg_q [Hg_k [Hg_v [Hg_o [Hg_1 [Hg_2 Hg_out]]]]]]].
   unfold model_apply_grad.
-  repeat split; apply matrix_add_ok; assumption.
+  repeat split.
+  - apply matrix_add_ok; assumption.
+  - apply matrix_add_ok; assumption.
+  - apply matrix_add_ok; assumption.
+  - apply matrix_add_ok; assumption.
+  - apply matrix_add_ok; assumption.
+  - apply matrix_add_ok; assumption.
+  - apply matrix_add_ok; assumption.
+  - apply matrix_add_ok; assumption.
 Qed.
 
 Fixpoint scalar_pow (x : Scalar) (n : nat) : Scalar :=

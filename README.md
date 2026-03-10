@@ -41,6 +41,8 @@ Implemented pieces:
 - formal token encoding and decoding helpers for the demo vocabulary
 - a frozen-body output-head training loop in the OCaml executable
 - deterministic and sampled generation paths in the OCaml executable
+- a runtime word tokenizer with bounded vocabulary projection for the OCaml training demo
+- sliding-window batch construction over runtime corpus lines
 - optional file-backed runtime corpus loading for the OCaml training demo
 
 Scalars are exact rationals (`Q`), not integers. Attention uses the positive kernel
@@ -101,6 +103,7 @@ The executable also prints:
 - a formal whole-model training and decoding demo extracted from the Rocq development
 - a runtime training demo over a tiny token corpus
 - a before/after loss trace for a cold output head trained against extracted hidden states
+- the runtime tokenizer vocabulary induced from the training corpus
 - before/after greedy continuations for the trained output head
 - before/after sampled continuations for the trained output head
 - before/after top-p sampled continuations for the trained output head
@@ -124,8 +127,11 @@ lighter frozen-body path, while the extracted whole-model demo gives the build
 and CI path a concrete exercised surface for the heavier optimizer definitions.
 For runtime experiments, `main.ml` can also load a small whitespace-tokenized
 corpus from a text file by passing a path on the command line or by setting
-`MICROGPT_CORPUS`. The repository includes `data/demo_corpus.txt`, and CI runs
-the executable against that file rather than the built-in fallback.
+`MICROGPT_CORPUS`. The runtime driver lowercases and tokenizes words, builds a
+bounded vocabulary sized to the extracted model, maps overflow words through an
+optional `<unk>` token when needed, and forms sliding windows for the runtime
+training batch. The repository includes `data/demo_corpus.txt`, and CI runs the
+executable against that file rather than the built-in fallback.
 
 ## Build
 

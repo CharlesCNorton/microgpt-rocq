@@ -95,34 +95,30 @@ let argmax_index xs =
   M.argmax xs
 
 (* ------------------------------------------------------------------------- *)
-(* Tiny text plumbing for the four-token demo vocabulary.                    *)
+(* Fixed demo-vocabulary helpers.                                            *)
 (* ------------------------------------------------------------------------- *)
 
-let token_words =
+let demo_token_words =
   [| "zero"; "one"; "two"; "three" |]
 
-let token_of_word word =
-  match String.lowercase_ascii word with
-  | "zero" -> 0
-  | "one" -> 1
-  | "two" -> 2
-  | "three" -> 3
-  | _ -> failwith ("unknown token word: " ^ word)
-
-let word_of_token token =
-  if token < 0 || token >= Array.length token_words then
+let demo_word_of_token token =
+  if token < 0 || token >= Array.length demo_token_words then
     Printf.sprintf "<tok:%d>" token
   else
-    token_words.(token)
+    demo_token_words.(token)
 
-let encode_text text =
-  text
-  |> String.split_on_char ' '
-  |> List.filter (fun piece -> piece <> "")
-  |> List.map token_of_word
+let decode_demo_tokens tokens =
+  String.concat " " (List.map demo_word_of_token tokens)
 
-let decode_tokens tokens =
-  String.concat " " (List.map word_of_token tokens)
+(* ------------------------------------------------------------------------- *)
+(* Runtime tokenizer and corpus loader for the executable trainer.           *)
+(* ------------------------------------------------------------------------- *)
+
+type runtime_vocab = {
+  runtime_words : string array;
+  runtime_lookup : (string, int) Hashtbl.t;
+  runtime_unk_token : int option;
+}
 
 let string_of_text_list texts =
   "[" ^ String.concat "; " (List.map (fun x -> "\"" ^ x ^ "\"") texts) ^ "]"
@@ -169,19 +165,158 @@ let training_corpus_source, training_corpus_text =
       else
         (path, lines)
 
-let default_training_prompt =
-  encode_text "two zero"
+let is_word_char = function
+  | 'a' .. 'z'
+  | '0' .. '9'
+  | '\'' -> true
+  | _ -> false
 
-let prompt_from_corpus corpus =
-  match corpus with
-  | line :: _ ->
-      (match encode_text line with
-       | first :: second :: _ -> [first; second]
-       | _ -> default_training_prompt)
-  | [] -> default_training_prompt
+let tokenize_words text =
+  let text = String.lowercase_ascii text in
+  let length = String.length text in
+  let buffer = Buffer.create 16 in
+  let flush acc =
+    if Buffer.length buffer = 0 then
+      acc
+    else
+      let word = Buffer.contents buffer in
+      Buffer.clear buffer;
+      word :: acc
+  in
+  let rec loop index acc =
+    if index >= length then
+      List.rev (flush acc)
+    else
+      let c = text.[index] in
+      if is_word_char c then (
+        Buffer.add_char buffer c;
+        loop (index + 1) acc
+      ) else
+        loop (index + 1) (flush acc)
+  in
+  loop 0 []
+
+let build_runtime_vocab size texts =
+  let counts = Hashtbl.create 32 in
+  let first_seen = Hashtbl.create 32 in
+  let order = ref 0 in
+  let note_word word =
+    match Hashtbl.find_opt counts word with
+    | Some count ->
+        Hashtbl.replace counts word (count + 1)
+    | None ->
+        Hashtbl.add counts word 1;
+        Hashtbl.add first_seen word !order;
+        incr order
+  in
+  List.iter
+    (fun text -> List.iter note_word (tokenize_words text))
+    texts;
+  let ranked_words =
+    Hashtbl.to_seq_keys counts
+    |> List.of_seq
+    |> List.sort
+         (fun left right ->
+           let count_cmp =
+             compare (Hashtbl.find counts right) (Hashtbl.find counts left)
+           in
+           if count_cmp <> 0 then
+             count_cmp
+           else
+             compare (Hashtbl.find first_seen left) (Hashtbl.find first_seen right))
+  in
+  let use_unk = size > 0 && List.length ranked_words > size in
+  let kept_size = if use_unk then max 0 (size - 1) else size in
+  let kept_words = take kept_size ranked_words in
+  let runtime_words =
+    if use_unk then
+      Array.of_list (kept_words @ [ "<unk>" ])
+    else
+      Array.of_list kept_words
+  in
+  let runtime_lookup = Hashtbl.create (max 4 (Array.length runtime_words)) in
+  Array.iteri
+    (fun index word -> Hashtbl.replace runtime_lookup word index)
+    runtime_words;
+  let runtime_unk_token =
+    if use_unk then Some (Array.length runtime_words - 1) else None
+  in
+  {
+    runtime_words;
+    runtime_lookup;
+    runtime_unk_token;
+  }
+
+let runtime_word_of_token vocab token =
+  if token < 0 || token >= Array.length vocab.runtime_words then
+    Printf.sprintf "<tok:%d>" token
+  else
+    vocab.runtime_words.(token)
+
+let decode_runtime_tokens vocab tokens =
+  String.concat " " (List.map (runtime_word_of_token vocab) tokens)
+
+let encode_runtime_word vocab word =
+  match Hashtbl.find_opt vocab.runtime_lookup word with
+  | Some token -> token
+  | None ->
+      (match vocab.runtime_unk_token with
+       | Some token -> token
+       | None -> 0)
+
+let encode_runtime_text vocab text =
+  tokenize_words text
+  |> List.map (encode_runtime_word vocab)
+
+let string_of_runtime_vocab vocab =
+  Array.to_list vocab.runtime_words
+  |> List.mapi (fun index word -> Printf.sprintf "%d=%s" index word)
+  |> String.concat ", "
+  |> Printf.sprintf "{%s}"
+
+let windows_of_sequence window_size tokens =
+  let rec loop acc suffix =
+    if List.length suffix < 2 then
+      List.rev acc
+    else
+      let next_suffix =
+        match suffix with
+        | [] -> []
+        | _ :: tail -> tail
+      in
+      loop (take window_size suffix :: acc) next_suffix
+  in
+  loop [] tokens
+
+let build_runtime_batch window_size vocab texts =
+  let encoded_lines =
+    List.map (encode_runtime_text vocab) texts
+  in
+  let windows =
+    List.concat (List.map (windows_of_sequence window_size) encoded_lines)
+  in
+  if windows <> [] then
+    windows
+  else
+    List.filter (fun tokens -> List.length tokens >= 2) encoded_lines
+
+let runtime_hp = M.demo2_hp
+let runtime_body_model = M.demo2_model
+let runtime_window_size = 4
+
+let runtime_vocab =
+  build_runtime_vocab runtime_hp.M.hp_vocab training_corpus_text
+
+let training_batch =
+  build_runtime_batch runtime_window_size runtime_vocab training_corpus_text
+
+let default_training_prompt =
+  match training_batch with
+  | tokens :: _ -> take 2 tokens
+  | [] -> [0; 1]
 
 let training_prompt =
-  prompt_from_corpus training_corpus_text
+  default_training_prompt
 
 (* ------------------------------------------------------------------------- *)
 (* Demo printers for the extracted fixed examples.                           *)
@@ -190,14 +325,14 @@ let training_prompt =
 let print_demo ?generated ?sequence_loss ?batch_loss name tokens prediction logits =
   Printf.printf "%s\n" name;
   Printf.printf "  tokens=%s\n" (string_of_int_list tokens);
-  Printf.printf "  text=\"%s\"\n" (decode_tokens tokens);
+  Printf.printf "  text=\"%s\"\n" (decode_demo_tokens tokens);
   (match generated with
    | None -> ()
    | Some xs ->
        Printf.printf "  generated=%s\n" (string_of_int_list xs);
-       Printf.printf "  generated_text=\"%s\"\n" (decode_tokens xs));
+       Printf.printf "  generated_text=\"%s\"\n" (decode_demo_tokens xs));
   Printf.printf "  prediction=%d\n" prediction;
-  Printf.printf "  prediction_text=\"%s\"\n" (word_of_token prediction);
+  Printf.printf "  prediction_text=\"%s\"\n" (demo_word_of_token prediction);
   Printf.printf "  logits=%s\n" (string_of_encoded_matrix logits);
   (match sequence_loss with
    | None -> ()
@@ -209,44 +344,44 @@ let print_demo ?generated ?sequence_loss ?batch_loss name tokens prediction logi
 let print_formal_training_demo () =
   Printf.printf "formal_train_demo\n";
   Printf.printf "  prompt=%s\n" (string_of_int_list M.demo2_formal_training_prompt);
-  Printf.printf "  prompt_text=\"%s\"\n" (decode_tokens M.demo2_formal_training_prompt);
+  Printf.printf "  prompt_text=\"%s\"\n" (decode_demo_tokens M.demo2_formal_training_prompt);
   Printf.printf "  learning_rate=%s\n" (string_of_q M.demo2_formal_learning_rate);
   Printf.printf "  initial_loss=%s\n" (string_of_encoded_scalar M.demo2_formal_loss_0_encoded);
-  Printf.printf "  initial_prediction=%s\n" (word_of_token M.demo2_formal_prediction_0);
+  Printf.printf "  initial_prediction=%s\n" (demo_word_of_token M.demo2_formal_prediction_0);
   Printf.printf "  trained_loss=%s\n" (string_of_encoded_scalar M.demo2_formal_loss_4_encoded);
-  Printf.printf "  trained_prediction=%s\n" (word_of_token M.demo2_formal_prediction_4);
+  Printf.printf "  trained_prediction=%s\n" (demo_word_of_token M.demo2_formal_prediction_4);
   Printf.printf "  trained_greedy=%s\n" (string_of_int_list M.demo2_formal_generated_3);
-  Printf.printf "  trained_greedy_text=\"%s\"\n" (decode_tokens M.demo2_formal_generated_3)
+  Printf.printf "  trained_greedy_text=\"%s\"\n" (decode_demo_tokens M.demo2_formal_generated_3)
 
 let print_formal_full_model_demo () =
   Printf.printf "formal_full_model_demo\n";
   Printf.printf "  prompt=%s\n" (string_of_int_list M.demo2_full_train_prompt);
-  Printf.printf "  prompt_text=\"%s\"\n" (decode_tokens M.demo2_full_train_prompt);
+  Printf.printf "  prompt_text=\"%s\"\n" (decode_demo_tokens M.demo2_full_train_prompt);
   Printf.printf "  learning_rate=%s\n" (string_of_q M.demo2_full_train_lr);
   Printf.printf "  initial_loss=%s\n"
     (string_of_encoded_scalar M.demo2_full_train_loss_0_encoded);
   Printf.printf "  initial_grad_abs_sum=%s\n"
     (string_of_encoded_scalar M.demo2_full_train_grad_0_abs_sum_encoded);
   Printf.printf "  initial_prediction=%s\n"
-    (word_of_token M.demo2_full_train_prediction_0);
+    (demo_word_of_token M.demo2_full_train_prediction_0);
   Printf.printf "  sgd_loss_1=%s\n"
     (string_of_encoded_scalar M.demo2_full_train_loss_1_encoded);
   Printf.printf "  sgd_prediction_1=%s\n"
-    (word_of_token M.demo2_full_train_prediction_1);
+    (demo_word_of_token M.demo2_full_train_prediction_1);
   Printf.printf "  sgd_greedy=%s\n"
     (string_of_int_list M.demo2_full_train_generated_2);
   Printf.printf "  sgd_greedy_text=\"%s\"\n"
-    (decode_tokens M.demo2_full_train_generated_2);
+    (decode_demo_tokens M.demo2_full_train_generated_2);
   Printf.printf "  sgd_top_k=%s\n"
     (string_of_int_list M.demo2_full_train_top_k_generated_2);
   Printf.printf "  sgd_top_k_text=\"%s\"\n"
-    (decode_tokens M.demo2_full_train_top_k_generated_2);
+    (decode_demo_tokens M.demo2_full_train_top_k_generated_2);
   Printf.printf "  sgd_top_p=%s\n"
     (string_of_int_list M.demo2_full_train_top_p_generated_2);
   Printf.printf "  sgd_top_p_text=\"%s\"\n"
-    (decode_tokens M.demo2_full_train_top_p_generated_2);
+    (decode_demo_tokens M.demo2_full_train_top_p_generated_2);
   Printf.printf "  adam_prediction_2=%s\n"
-    (word_of_token M.demo2_full_adam_prediction_2)
+    (demo_word_of_token M.demo2_full_adam_prediction_2)
 
 (* ------------------------------------------------------------------------- *)
 (* Frozen-body output-head training.                                         *)
@@ -510,7 +645,7 @@ let rec sampled_generate_top_p rng fuel hp model tokens temperature top_p =
 
 let string_of_distribution distribution =
   distribution
-  |> List.map (fun (token, prob) -> Printf.sprintf "%s:%s" (word_of_token token) (string_of_q prob))
+  |> List.map (fun (token, prob) -> Printf.sprintf "%s:%s" (demo_word_of_token token) (string_of_q prob))
   |> String.concat ", "
   |> Printf.sprintf "{%s}"
 
@@ -610,7 +745,7 @@ let rec sampled_generate_float_top_p rng fuel hp body_model out_proj tokens temp
 
 let string_of_float_distribution distribution =
   distribution
-  |> List.map (fun (token, prob) -> Printf.sprintf "%s:%.6f" (word_of_token token) prob)
+  |> List.map (fun (token, prob) -> Printf.sprintf "%s:%.6f" (demo_word_of_token token) prob)
   |> String.concat ", "
   |> Printf.sprintf "{%s}"
 
@@ -618,18 +753,23 @@ let string_of_float_distribution distribution =
 (* Runtime experiment built on top of the verified core.                     *)
 (* ------------------------------------------------------------------------- *)
 
-let training_batch =
-  List.map encode_text training_corpus_text
+let string_of_runtime_distribution vocab distribution =
+  distribution
+  |> List.map
+       (fun (token, prob) ->
+         Printf.sprintf "%s:%.6f" (runtime_word_of_token vocab token) prob)
+  |> String.concat ", "
+  |> Printf.sprintf "{%s}"
 
-let print_trace_entry entry =
+let print_trace_entry vocab entry =
   Printf.printf "  step=%d logits_loss=%.6f prompt_prediction=%s\n"
     entry.trace_step
     entry.trace_logits_loss
-    (word_of_token entry.trace_prompt_prediction)
+    (runtime_word_of_token vocab entry.trace_prompt_prediction)
 
 let print_training_demo () =
-  let hp = M.demo2_hp in
-  let body_model = M.demo2_model in
+  let hp = runtime_hp in
+  let body_model = runtime_body_model in
   let learning_rate = 0.35 in
   let steps = 120 in
   let report_every = 20 in
@@ -676,28 +816,38 @@ let print_training_demo () =
   Printf.printf "runtime_train_demo\n";
   Printf.printf "  corpus_source=\"%s\"\n" training_corpus_source;
   Printf.printf "  corpus=%s\n" (string_of_text_list training_corpus_text);
+  Printf.printf "  runtime_vocab=%s\n" (string_of_runtime_vocab runtime_vocab);
+  Printf.printf "  runtime_batch_size=%d\n" (List.length training_batch);
   Printf.printf "  prompt=%s\n" (string_of_int_list training_prompt);
-  Printf.printf "  prompt_text=\"%s\"\n" (decode_tokens training_prompt);
+  Printf.printf "  prompt_text=\"%s\"\n" (decode_runtime_tokens runtime_vocab training_prompt);
   Printf.printf "  learning_rate=%.3f\n" learning_rate;
   Printf.printf "  steps=%d\n" steps;
   Printf.printf "  initial_runtime_loss=%.6f\n" initial_runtime_loss;
-  Printf.printf "  initial_distribution=%s\n" (string_of_float_distribution before_distribution);
+  Printf.printf "  initial_distribution=%s\n"
+    (string_of_runtime_distribution runtime_vocab before_distribution);
   Printf.printf "  initial_greedy=%s\n" (string_of_int_list before_greedy);
-  Printf.printf "  initial_greedy_text=\"%s\"\n" (decode_tokens before_greedy);
+  Printf.printf "  initial_greedy_text=\"%s\"\n"
+    (decode_runtime_tokens runtime_vocab before_greedy);
   Printf.printf "  initial_sampled=%s\n" (string_of_int_list before_sampled);
-  Printf.printf "  initial_sampled_text=\"%s\"\n" (decode_tokens before_sampled);
+  Printf.printf "  initial_sampled_text=\"%s\"\n"
+    (decode_runtime_tokens runtime_vocab before_sampled);
   Printf.printf "  initial_top_p=%s\n" (string_of_int_list before_top_p);
-  Printf.printf "  initial_top_p_text=\"%s\"\n" (decode_tokens before_top_p);
+  Printf.printf "  initial_top_p_text=\"%s\"\n"
+    (decode_runtime_tokens runtime_vocab before_top_p);
   Printf.printf "  trace\n";
-  List.iter print_trace_entry trace;
+  List.iter (print_trace_entry runtime_vocab) trace;
   Printf.printf "  final_runtime_loss=%.6f\n" final_runtime_loss;
-  Printf.printf "  final_distribution=%s\n" (string_of_float_distribution after_distribution);
+  Printf.printf "  final_distribution=%s\n"
+    (string_of_runtime_distribution runtime_vocab after_distribution);
   Printf.printf "  final_greedy=%s\n" (string_of_int_list after_greedy);
-  Printf.printf "  final_greedy_text=\"%s\"\n" (decode_tokens after_greedy);
+  Printf.printf "  final_greedy_text=\"%s\"\n"
+    (decode_runtime_tokens runtime_vocab after_greedy);
   Printf.printf "  final_sampled=%s\n" (string_of_int_list after_sampled);
-  Printf.printf "  final_sampled_text=\"%s\"\n" (decode_tokens after_sampled);
+  Printf.printf "  final_sampled_text=\"%s\"\n"
+    (decode_runtime_tokens runtime_vocab after_sampled);
   Printf.printf "  final_top_p=%s\n" (string_of_int_list after_top_p);
-  Printf.printf "  final_top_p_text=\"%s\"\n" (decode_tokens after_top_p)
+  Printf.printf "  final_top_p_text=\"%s\"\n"
+    (decode_runtime_tokens runtime_vocab after_top_p)
 
 (* ------------------------------------------------------------------------- *)
 (* Main entry point.                                                         *)

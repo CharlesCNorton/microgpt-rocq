@@ -3244,8 +3244,6 @@ Proof.
     remember
       (vec_scale (2 / q_of_nat (S (length logits')))
          (vec_sub probs targets)) as gp.
-    remember (output_scores (logit :: logits')) as scores.
-    remember (sum_scalars scores) as denom.
     assert (Hprobs : row_ok (S (length logits')) probs).
     {
       subst probs.
@@ -3262,7 +3260,7 @@ Proof.
       apply vec_scale_row_ok.
       apply vec_sub_row_ok; assumption.
     }
-    destruct (Qeq_bool denom 0); simpl.
+    destruct (Qeq_bool (sum_scalars (output_scores (logit :: logits'))) 0); simpl.
     + apply row_ok_zero_vec.
     + apply vec_hadamard_row_ok.
       * apply map_row_ok.

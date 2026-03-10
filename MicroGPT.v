@@ -3430,7 +3430,7 @@ Proof.
       repeat split; try apply zero_matrix_ok; constructor.
     + inversion Hgrads as [|? ? Hgrad_out Hgrads_out']; subst.
       remember (backprop_feed_forward d_model d_hidden w1 w2 input grad_out)
-        as local.
+        as local eqn:Hlocal.
       destruct local as [local_w1 local_w2 local_input].
       destruct (backprop_feed_forward_sequence d_model d_hidden w1 w2 inputs grads_out')
         as [[w1_rest w2_rest] input_rest] eqn:Hrest.
@@ -3443,6 +3443,8 @@ Proof.
         (IH grads_out' w1_rest w2_rest input_rest
           Hw1 Hw2 Hinputs' Hgrads_out' Hrest)
         as [Hrest_w1 [Hrest_w2 Hrest_inputs]].
+      rewrite Hlocal in Hlocal_w1, Hlocal_w2, Hlocal_input.
+      cbn in Hlocal_w1, Hlocal_w2, Hlocal_input.
       split.
       * apply matrix_add_ok; assumption.
       * split.

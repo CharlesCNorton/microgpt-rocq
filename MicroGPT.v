@@ -2492,9 +2492,17 @@ Lemma backprop_attend_aux_ok :
 Proof.
   intros width query keys.
   induction keys as [|key keys IH]; intros values output grad_out denom Hquery Hkeys Hvalues Houtput Hgrad_out.
-  - destruct values as [|value values]; simpl; repeat split; constructor.
   - destruct values as [|value values]; simpl.
-    + repeat split; constructor.
+    + split.
+      * apply row_ok_zero_vec.
+      * split; constructor.
+    + split.
+      * apply row_ok_zero_vec.
+      * split; constructor.
+  - destruct values as [|value values]; simpl.
+    + split.
+      * apply row_ok_zero_vec.
+      * split; constructor.
     + inversion Hkeys as [|? ? Hkey Hkeys']; subst.
       inversion Hvalues as [|? ? Hvalue Hvalues']; subst.
       specialize (IH values output grad_out denom Hquery Hkeys' Hvalues' Houtput Hgrad_out).

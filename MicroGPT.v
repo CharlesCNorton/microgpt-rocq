@@ -1377,7 +1377,7 @@ Definition next_token_targets (tokens : list nat) : list nat :=
 
 Lemma next_token_targets_length :
   forall tokens,
-    length (next_token_targets tokens) <= length tokens.
+    (length (next_token_targets tokens) <= length tokens)%nat.
 Proof.
   intros [|tok tokens]; simpl; lia.
 Qed.

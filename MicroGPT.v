@@ -1077,7 +1077,9 @@ Proof.
     + apply row_ok_zero_vec.
     + simpl.
       rewrite vec_scale_length.
-      apply one_hot_vector_row_ok.
+      simpl.
+      f_equal.
+      apply one_hot_vector_aux_length.
 Qed.
 
 Lemma embed_tokens_with_positions_aux_length :

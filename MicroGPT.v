@@ -3288,17 +3288,23 @@ Proof.
       * simpl.
         unfold row_ok in Hscaled.
         simpl in Hscaled.
-        inversion Hscaled as [Hys].
-        f_equal.
-        change
-          (length (vec_hadamard (map output_score_grad logits') ys)
-             = length logits').
-        rewrite vec_hadamard_length.
-        -- rewrite map_length.
-           reflexivity.
-        -- rewrite map_length.
-           symmetry.
-           exact Hys.
+        destruct logits' as [|logit' logits''].
+        -- destruct ys as [|y0 ys'].
+           ++ reflexivity.
+           ++ discriminate.
+        -- destruct ys as [|y0 ys'].
+           ++ discriminate.
+           ++ simpl in Hscaled.
+              inversion Hscaled as [Htail].
+              simpl.
+              f_equal.
+              f_equal.
+              rewrite vec_hadamard_length.
+              ** rewrite map_length.
+                 reflexivity.
+              ** rewrite map_length.
+                 symmetry.
+                 exact Htail.
 Qed.
 
 Lemma sequence_logits_loss_grad_raw_row_ok :

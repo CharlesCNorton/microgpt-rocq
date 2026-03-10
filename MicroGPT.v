@@ -3256,6 +3256,7 @@ Proof.
       subst targets.
       apply one_hot_vector_row_ok.
     }
+    subst targets.
     assert (Hgp : row_ok (S (length logits')) gp).
     {
       subst gp.

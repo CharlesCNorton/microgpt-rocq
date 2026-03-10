@@ -2438,6 +2438,47 @@ Proof.
       * exact IH.
 Qed.
 
+Lemma matrix_div_safe_length :
+  forall a b,
+    length a = length b ->
+    length (matrix_div_safe a b) = length a.
+Proof.
+  intros a b Hlen.
+  revert b Hlen.
+  induction a as [|row_a a' IH]; intros b Hlen.
+  - destruct b as [|row_b b']; simpl in *.
+    + reflexivity.
+    + discriminate.
+  - destruct b as [|row_b b']; simpl in *.
+    + discriminate.
+    + f_equal.
+      apply IH.
+      now inversion Hlen.
+Qed.
+
+Lemma matrix_div_safe_rows_ok :
+  forall cols a b,
+    Forall (row_ok cols) a ->
+    Forall (row_ok cols) b ->
+    length a = length b ->
+    Forall (row_ok cols) (matrix_div_safe a b).
+Proof.
+  intros cols a b Ha_rows.
+  revert b.
+  induction Ha_rows as [|row_a a' Hrow_a Ha_rows' IH]; intros b Hb_rows Hlen.
+  - destruct b as [|row_b b']; simpl in *.
+    + constructor.
+    + discriminate.
+  - destruct b as [|row_b b']; simpl in *.
+    + discriminate.
+    + inversion Hb_rows as [|? ? Hrow_b Hb_rows']; subst.
+      constructor.
+      * apply vec_div_safe_row_ok; assumption.
+      * apply IH.
+        -- exact Hb_rows'.
+        -- now inversion Hlen.
+Qed.
+
 Lemma matrix_div_safe_ok :
   forall rows cols a b,
     matrix_ok rows cols a ->
@@ -2446,25 +2487,11 @@ Lemma matrix_div_safe_ok :
 Proof.
   intros rows cols a b [Ha_len Ha_rows] [Hb_len Hb_rows].
   split.
-  - clear Hb_rows.
-    revert b Hb_len.
-    induction a as [|row_a a' IH]; intros b Hb_len.
-    + destruct b; simpl in *; auto; discriminate.
-    + destruct b as [|row_b b']; simpl in *; try discriminate.
-      simpl.
-      f_equal.
-      apply IH.
-      now inversion Ha_len; inversion Hb_len.
-  - revert b Hb_rows Hb_len.
-    induction Ha_rows as [|row_a a' Hrow_a Ha_rows' IH]; intros b Hb_rows Hb_len.
-    + destruct b; simpl in *; constructor.
-    + destruct b as [|row_b b']; simpl in *; try discriminate.
-      inversion Hb_rows as [|? ? Hrow_b Hb_rows']; subst.
-      constructor.
-      * apply vec_div_safe_row_ok; assumption.
-      * apply IH.
-        -- exact Hb_rows'.
-        -- now inversion Hb_len.
+  - rewrite matrix_div_safe_length.
+    + exact Ha_len.
+    + now rewrite Ha_len, Hb_len.
+  - apply matrix_div_safe_rows_ok; try assumption.
+    now rewrite Ha_len, Hb_len.
 Qed.
 
 Lemma matrix_sqrt_floor_ok :

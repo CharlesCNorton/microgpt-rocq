@@ -3486,9 +3486,9 @@ Proof.
       * constructor.
         -- exact Hgrad.
         -- exact (proj2 (zero_matrix_ok rows cols)).
-    + split.
-      specialize (IH tok').
+    + specialize (IH tok').
       destruct IH as [IHlen IHrows].
+      split.
       * simpl.
         simpl.
         now rewrite IHlen.

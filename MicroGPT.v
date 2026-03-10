@@ -1086,8 +1086,8 @@ Lemma embed_tokens_with_positions_aux_length :
   forall hp m pos tokens,
     length (embed_tokens_with_positions_aux hp m pos tokens) = length tokens.
 Proof.
-  intros hp m pos tokens.
-  induction tokens as [|tok tokens IH]; simpl.
+  intros hp m tokens.
+  induction tokens as [|tok tokens IH]; intros pos; simpl.
   - reflexivity.
   - now rewrite IH.
 Qed.
@@ -1107,8 +1107,8 @@ Lemma embed_tokens_with_positions_aux_row_ok :
     Forall (row_ok (hp_d_model hp))
       (embed_tokens_with_positions_aux hp m pos tokens).
 Proof.
-  intros hp m pos tokens Hwf.
-  induction tokens as [|tok tokens IH]; simpl.
+  intros hp m tokens.
+  induction tokens as [|tok tokens IH]; intros pos Hwf; simpl.
   - constructor.
   - constructor.
     + destruct Hwf as [Hemb _].

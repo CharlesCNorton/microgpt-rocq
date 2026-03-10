@@ -2745,13 +2745,22 @@ Proof.
         values
         grad_outputs')
       as [[query_rest key_rest] value_rest] eqn:Hrest.
-    simpl in IHquery, IHkeys, IHvalues.
-    simpl.
+    cbn [fst snd] in IHquery, IHkeys, IHvalues |- *.
     split.
-    + lia.
+    + now rewrite IHquery.
     + split.
-      * lia.
-      * lia.
+      * rewrite IHkeys.
+        rewrite Hacc_keys_len'.
+        subst seen_keys'.
+        rewrite app_length.
+        simpl.
+        lia.
+      * rewrite IHvalues.
+        rewrite Hacc_vals_len'.
+        subst seen_values'.
+        rewrite app_length.
+        simpl.
+        lia.
 Qed.
 
 Lemma backprop_causal_attention_lengths :

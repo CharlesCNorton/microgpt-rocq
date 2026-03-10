@@ -946,8 +946,19 @@ Fixpoint one_hot_vector_aux (remaining target idx : nat) : Vector :=
 Definition one_hot_vector (width target : nat) : Vector :=
   one_hot_vector_aux width target 0.
 
+(** Output probabilities use a monotone exact score map rather than the older
+    squared-score trick.  Nonpositive logits are compressed through a positive
+    reciprocal branch, while positive logits remain linear.  This keeps every
+    score strictly positive without destroying order information by squaring. *)
 Definition output_score (logit : Scalar) : Scalar :=
-  1 + logit * logit.
+  if Qle_bool logit 0
+  then 1 / (1 - logit)
+  else 1 + logit.
+
+Definition output_score_grad (logit : Scalar) : Scalar :=
+  if Qle_bool logit 0
+  then 1 / ((1 - logit) * (1 - logit))
+  else 1.
 
 Definition output_scores (logits : Vector) : Vector :=
   map output_score logits.
@@ -1067,14 +1078,19 @@ Lemma output_score_positive :
 Proof.
   intros logit.
   unfold output_score.
-  assert (0 <= logit * logit).
-  {
-    destruct (Qlt_le_dec logit 0) as [Hneg|Hnonneg].
-    - setoid_replace (logit * logit) with ((- logit) * (- logit)) by ring.
-      apply Qmult_le_0_compat; lra.
-    - apply Qmult_le_0_compat; lra.
-  }
-  lra.
+  destruct (Qle_bool logit 0) eqn:Hle.
+  - apply Qle_bool_iff in Hle.
+    apply Qinv_lt_0_compat.
+    lra.
+  - assert (~ logit <= 0) as Hnle.
+    {
+      intro Hcontra.
+      pose proof (proj2 (Qle_bool_iff logit 0) Hcontra) as Htrue.
+      rewrite Htrue in Hle.
+      discriminate.
+    }
+    pose proof (Qnot_le_lt logit 0 Hnle) as Hgt.
+    lra.
 Qed.
 
 Lemma output_scores_row_ok :
@@ -2712,7 +2728,7 @@ Definition token_distribution_loss_grad
       then zero_vec (length logits)
       else
         let centered := vec_sub gp (const_vec (length gp) (dot gp probs)) in
-        vec_hadamard (map (fun x => 2 * x) logits)
+        vec_hadamard (map output_score_grad logits)
           (vec_scale (/ denom) centered)
   end.
 
@@ -3587,6 +3603,23 @@ Set Extraction AutoInline.
 Set Extraction Output Directory ".".
 
 Extraction "microgpt_extracted.ml"
+  encode_demo_token
+  decode_demo_token
+  encode_demo_sequence
+  decode_demo_sequence
+  normalized_output_distribution
+  predict_next
+  predict_next_top_k
+  predict_next_top_p
+  greedy_generate_top_k
+  greedy_generate_top_p
+  model_batch_loss
+  full_model_grad_batch
+  apply_model_sgd_step
+  train_model_sgd
+  zero_adam_state
+  apply_model_adam_step
+  train_model_adam
   demo1_tokens
   demo1_generated_2
   demo1_logits_encoded

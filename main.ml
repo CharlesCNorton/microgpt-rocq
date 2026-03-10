@@ -434,15 +434,21 @@ let top_k_float_distribution k probs =
       (fun (index, prob) -> (index, prob /. kept_mass))
       ranked
 
+let positive_score_float x =
+  if x <= 0.0
+  then 1.0 /. (1.0 -. x)
+  else 1.0 +. x
+
 let next_token_distribution_float ?(temperature = 1.0) ?(top_k = 0) hp body_model out_proj tokens =
   let hidden = float_vector_of_q_vector (M.last_hidden_state hp body_model tokens) in
   let logits = float_logits out_proj hidden in
+  let scaled_logits =
+    if temperature = 0.0
+    then logits
+    else Array.map (fun logit -> logit /. temperature) logits
+  in
   let scores =
-    Array.map
-      (fun logit ->
-         let scaled = logit /. temperature in
-         1.0 +. (scaled *. scaled))
-      logits
+    Array.map positive_score_float scaled_logits
   in
   let denom = Array.fold_left ( +. ) 0.0 scores in
   let probs = Array.to_list (Array.map (fun score -> score /. denom) scores) in

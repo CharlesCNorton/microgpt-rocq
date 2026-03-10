@@ -34,6 +34,7 @@ Implemented pieces:
 - whole-model SGD updates over embeddings, attention weights, MLP weights, and output projection
 - an Adam-style optimizer state inside the Rocq development
 - in-core temperature scaling plus top-k and top-p filtered decoding surfaces
+- extracted OCaml exports for the whole-model loss, gradient, SGD, Adam, and decoding helpers
 - formal token encoding and decoding helpers for the demo vocabulary
 - a frozen-body output-head training loop in the OCaml executable
 - deterministic and sampled generation paths in the OCaml executable
@@ -43,6 +44,11 @@ Scalars are exact rationals (`Q`), not integers. Attention uses the positive ker
 `1 + dot(q, k)^2`
 
 followed by explicit normalization by the prefix score sum. This keeps the attention step exact while making it materially closer to a true normalized weighting scheme than the earlier unnormalized integer baseline.
+
+Token probabilities are derived from a monotone exact positive score map over
+logits: nonpositive logits use a reciprocal branch `1 / (1 - x)`, while
+positive logits stay linear as `1 + x`. Greedy prediction, token loss, and
+top-`k` / top-`p` decoding all route through that same normalized surface.
 
 ## What Is Proved
 

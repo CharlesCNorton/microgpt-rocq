@@ -2533,8 +2533,10 @@ Proof.
   unfold backprop_attend.
   destruct (Qeq_bool (attend_denominator query keys) 0); simpl.
   - split.
-    + apply zero_sequence_length.
-    + apply zero_sequence_length.
+    + unfold zero_sequence.
+      apply repeat_length.
+    + unfold zero_sequence.
+      apply repeat_length.
   - apply backprop_attend_aux_lengths.
     exact Hlen.
 Qed.
@@ -2555,8 +2557,18 @@ Proof.
   - split.
     + apply row_ok_zero_vec.
     + split.
-      * apply zero_sequence_row_ok.
-      * apply zero_sequence_row_ok.
+      * unfold zero_sequence.
+        induction (length keys) as [|n IH]; simpl.
+        -- constructor.
+        -- constructor.
+           ++ apply row_ok_zero_vec.
+           ++ exact IH.
+      * unfold zero_sequence.
+        induction (length values) as [|n IH]; simpl.
+        -- constructor.
+        -- constructor.
+           ++ apply row_ok_zero_vec.
+           ++ exact IH.
   - apply backprop_attend_aux_ok.
     + exact Hquery.
     + exact Hkeys.

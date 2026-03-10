@@ -2923,10 +2923,11 @@ Proof.
   intros hp m Hm.
   unfold adam_state_wf, zero_adam_state.
   simpl.
-  repeat split.
+  split.
   - exact Hm.
-  - apply model_grad_wf_zero.
-  - apply model_grad_wf_zero.
+  - split.
+    + apply model_grad_wf_zero.
+    + apply model_grad_wf_zero.
 Qed.
 
 Definition adam_bias_correction (beta : Scalar) (steps : nat) : Scalar :=

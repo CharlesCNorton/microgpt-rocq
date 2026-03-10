@@ -6,6 +6,7 @@ The repository contains:
 
 - a single theorem-bearing Rocq development in `MicroGPT.v`
 - a small OCaml driver in `main.ml`
+- a small checked-in text corpus in `data/demo_corpus.txt`
 - extracted OCaml artifacts generated from the Rocq source
 - a GitHub Actions workflow that proves, extracts, builds, and runs the executable
 
@@ -121,7 +122,8 @@ lighter frozen-body path, while the extracted whole-model demo gives the build
 and CI path a concrete exercised surface for the heavier optimizer definitions.
 For runtime experiments, `main.ml` can also load a small whitespace-tokenized
 corpus from a text file by passing a path on the command line or by setting
-`MICROGPT_CORPUS`.
+`MICROGPT_CORPUS`. The repository includes `data/demo_corpus.txt`, and CI runs
+the executable against that file rather than the built-in fallback.
 
 ## Build
 

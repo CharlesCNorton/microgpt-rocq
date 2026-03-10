@@ -990,6 +990,32 @@ Definition argmax (xs : Vector) : nat :=
   | x :: xs' => argmax_aux O x 1 xs'
   end.
 
+Lemma argmax_aux_lt :
+  forall xs best_idx best_val next_idx,
+    (best_idx < next_idx)%nat ->
+    (argmax_aux best_idx best_val next_idx xs < next_idx + length xs)%nat.
+Proof.
+  induction xs as [|x xs IH]; intros best_idx best_val next_idx Hbest; simpl.
+  - lia.
+  - destruct (Qle_bool best_val x) eqn:Hcmp.
+    + apply IH.
+      lia.
+    + apply IH.
+      lia.
+Qed.
+
+Lemma argmax_lt_length :
+  forall xs,
+    xs <> [] ->
+    (argmax xs < length xs)%nat.
+Proof.
+  intros xs Hxs.
+  destruct xs as [|x xs]; [contradiction|].
+  simpl.
+  apply argmax_aux_lt.
+  lia.
+Qed.
+
 (** * Sequence-level language-model surface. *)
 
 Fixpoint sum_scalars (xs : list Scalar) : Scalar :=

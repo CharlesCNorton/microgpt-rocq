@@ -3263,9 +3263,9 @@ Proof.
     remember (output_score logit + sum_scalars (output_scores logits')) as denom.
     destruct (Qeq_bool denom 0); simpl.
     + apply row_ok_zero_vec.
-    + apply vec_hadamard_row_ok.
-      * apply map_row_ok.
-        reflexivity.
+    + unfold row_ok.
+      rewrite vec_hadamard_length.
+      * now rewrite map_length.
       * apply vec_scale_row_ok.
         apply vec_sub_row_ok.
         -- exact Hgp.

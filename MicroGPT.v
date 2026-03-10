@@ -1373,8 +1373,6 @@ Fixpoint sum_scalars (xs : list Scalar) : Scalar :=
   | x :: xs' => x + sum_scalars xs'
   end.
 
-Arguments sum_scalars _ : simpl never.
-
 Definition mean_scalars (xs : list Scalar) : Scalar :=
   match xs with
   | [] => 0

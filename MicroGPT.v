@@ -3459,7 +3459,7 @@ Proof.
         (IH grads_out' w1_rest w2_rest input_rest
           Hw1 Hw2 Hinputs' Hgrads_out' Hrest)
         as [Hrest_w1 [Hrest_w2 Hrest_inputs]].
-      rewrite Hlocal in Hlocal_w1, Hlocal_w2, Hlocal_input.
+      inversion Hlocal; subst; clear Hlocal.
       cbn in Hlocal_w1, Hlocal_w2, Hlocal_input.
       split.
       * apply matrix_add_ok; assumption.

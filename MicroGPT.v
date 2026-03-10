@@ -2739,12 +2739,19 @@ Proof.
           + exact Hvalue.
           + constructor.
       }
+      assert (Hseen_len' : length seen_keys' = length seen_values').
+      {
+        subst seen_keys' seen_values'.
+        rewrite !app_length.
+        simpl.
+        lia.
+      }
       specialize (IH seen_keys' seen_values'
         (seq_add (attend_back_keys local) (acc_key_grads ++ [zero_vec width]))
         (seq_add (attend_back_values local) (acc_value_grads ++ [zero_vec width]))
         keys values grad_outputs').
       specialize (IH
-        (f_equal S Hseen_len)
+        Hseen_len'
         Hlocal_keys_len
         Hlocal_values_len).
       specialize (IH

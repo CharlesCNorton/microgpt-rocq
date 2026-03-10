@@ -3282,6 +3282,7 @@ Proof.
         apply vec_scale_row_ok.
         exact Hcentered.
       }
+      rewrite <- Heqscaled.
       destruct scaled as [|y ys].
       * unfold row_ok in Hscaled.
         discriminate.

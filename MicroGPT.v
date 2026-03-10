@@ -856,8 +856,8 @@ Lemma transformer_stack_length :
     model_wf hp m ->
     length (transformer_stack layers hp m hidden) = length hidden.
 Proof.
-  intros layers hp m hidden Hwf.
-  induction layers as [|layers IH]; simpl.
+  intros layers hp m.
+  induction layers as [|layers IH]; intros hidden Hwf; simpl.
   - reflexivity.
   - rewrite IH.
     + apply transformer_block_length.
@@ -872,8 +872,8 @@ Lemma transformer_stack_row_ok :
     Forall (row_ok (hp_d_model hp))
       (transformer_stack layers hp m hidden).
 Proof.
-  intros layers hp m hidden Hwf Hhidden.
-  induction layers as [|layers IH]; simpl.
+  intros layers hp m.
+  induction layers as [|layers IH]; intros hidden Hwf Hhidden; simpl.
   - exact Hhidden.
   - apply IH.
     + exact Hwf.

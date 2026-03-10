@@ -55,3 +55,8 @@ jobs:
           grep -q '^  sgd_top_p=' demo_output.txt
           grep -q '^  adam_prediction_2=' demo_output.txt
           grep -q '^runtime_train_demo$' demo_output.txt
+          grep -q '^  corpus_source=' demo_output.txt
+          grep -q '^  initial_runtime_loss=' demo_output.txt
+          grep -q '^  final_runtime_loss=' demo_output.txt
+          grep -q '^  initial_top_p=' demo_output.txt
+          grep -q '^  final_top_p=' demo_output.txt

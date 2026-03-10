@@ -127,6 +127,62 @@ let decode_tokens tokens =
 let string_of_text_list texts =
   "[" ^ String.concat "; " (List.map (fun x -> "\"" ^ x ^ "\"") texts) ^ "]"
 
+let read_all_lines path =
+  let channel = open_in path in
+  let rec loop acc =
+    try
+      loop (input_line channel :: acc)
+    with End_of_file ->
+      close_in channel;
+      List.rev acc
+  in
+  loop []
+
+let built_in_training_corpus_text =
+  [
+    "zero one two zero";
+    "one two zero one";
+    "two zero one two";
+  ]
+
+let training_corpus_source, training_corpus_text =
+  let cli_path =
+    if Array.length Sys.argv > 1 then Some Sys.argv.(1) else None
+  in
+  let env_path = Sys.getenv_opt "MICROGPT_CORPUS" in
+  let source_path =
+    match env_path with
+    | Some _ as path -> path
+    | None -> cli_path
+  in
+  match source_path with
+  | None ->
+      ("built-in", built_in_training_corpus_text)
+  | Some path ->
+      let lines =
+        read_all_lines path
+        |> List.map String.trim
+        |> List.filter (fun line -> line <> "")
+      in
+      if lines = [] then
+        ("built-in", built_in_training_corpus_text)
+      else
+        (path, lines)
+
+let default_training_prompt =
+  encode_text "two zero"
+
+let prompt_from_corpus corpus =
+  match corpus with
+  | line :: _ ->
+      (match encode_text line with
+       | first :: second :: _ -> [first; second]
+       | _ -> default_training_prompt)
+  | [] -> default_training_prompt
+
+let training_prompt =
+  prompt_from_corpus training_corpus_text
+
 (* ------------------------------------------------------------------------- *)
 (* Demo printers for the extracted fixed examples.                           *)
 (* ------------------------------------------------------------------------- *)
@@ -381,7 +437,32 @@ let top_k_distribution k probs =
     in
     List.map (fun (index, prob) -> (index, M.qdiv prob kept_mass)) ranked
 
-let next_token_distribution ?(temperature = q_one) ?(top_k = 0) hp model tokens =
+let top_p_distribution cutoff probs =
+  let ranked =
+    List.mapi (fun index prob -> (index, prob)) probs
+    |> List.sort (fun (_, left) (_, right) -> compare_q right left)
+  in
+  let rec take_until_mass mass = function
+    | [] -> []
+    | ((_, prob) as item) :: rest ->
+        if compare_q cutoff mass <= 0 then
+          []
+        else
+          item :: take_until_mass (M.qplus mass prob) rest
+  in
+  let kept = take_until_mass q_zero ranked in
+  let kept_mass =
+    List.fold_left
+      (fun acc (_, prob) -> M.qplus acc prob)
+      q_zero
+      kept
+  in
+  if kept = [] || M.qeq_bool kept_mass q_zero then
+    kept
+  else
+    List.map (fun (index, prob) -> (index, M.qdiv prob kept_mass)) kept
+
+let next_token_distribution ?(temperature = q_one) ?(top_k = 0) ?(top_p = q_one) hp model tokens =
   let hidden = M.last_hidden_state hp model tokens in
   let logits = M.logits_for_hidden model hidden in
   let scaled_logits =
@@ -389,7 +470,12 @@ let next_token_distribution ?(temperature = q_one) ?(top_k = 0) hp model tokens 
     else List.map (fun logit -> M.qdiv logit temperature) logits
   in
   let probs = M.normalized_output_distribution scaled_logits in
-  top_k_distribution top_k probs
+  if top_k > 0 then
+    top_k_distribution top_k probs
+  else if compare_q top_p q_one < 0 then
+    top_p_distribution top_p probs
+  else
+    List.mapi (fun index prob -> (index, prob)) probs
 
 let sample_from_distribution rng distribution =
   let threshold = Random.State.float rng 1.0 in
@@ -411,6 +497,16 @@ let rec sampled_generate rng fuel hp model tokens temperature top_k =
     in
     let next_token = sample_from_distribution rng distribution in
     sampled_generate rng (fuel - 1) hp model (tokens @ [next_token]) temperature top_k
+
+let rec sampled_generate_top_p rng fuel hp model tokens temperature top_p =
+  if fuel <= 0 then
+    tokens
+  else
+    let distribution =
+      next_token_distribution ~temperature ~top_p hp model tokens
+    in
+    let next_token = sample_from_distribution rng distribution in
+    sampled_generate_top_p rng (fuel - 1) hp model (tokens @ [next_token]) temperature top_p
 
 let string_of_distribution distribution =
   distribution
@@ -434,12 +530,34 @@ let top_k_float_distribution k probs =
       (fun (index, prob) -> (index, prob /. kept_mass))
       ranked
 
+let top_p_float_distribution cutoff probs =
+  let ranked =
+    List.mapi (fun index prob -> (index, prob)) probs
+    |> List.sort (fun (_, left) (_, right) -> Float.compare right left)
+  in
+  let rec take_until_mass mass = function
+    | [] -> []
+    | ((_, prob) as item) :: rest ->
+        if cutoff <= mass then
+          []
+        else
+          item :: take_until_mass (mass +. prob) rest
+  in
+  let kept = take_until_mass 0.0 ranked in
+  let kept_mass =
+    List.fold_left (fun acc (_, prob) -> acc +. prob) 0.0 kept
+  in
+  if kept = [] || kept_mass = 0.0 then
+    kept
+  else
+    List.map (fun (index, prob) -> (index, prob /. kept_mass)) kept
+
 let positive_score_float x =
   if x <= 0.0
   then 1.0 /. (1.0 -. x)
   else 1.0 +. x
 
-let next_token_distribution_float ?(temperature = 1.0) ?(top_k = 0) hp body_model out_proj tokens =
+let next_token_distribution_float ?(temperature = 1.0) ?(top_k = 0) ?(top_p = 1.0) hp body_model out_proj tokens =
   let hidden = float_vector_of_q_vector (M.last_hidden_state hp body_model tokens) in
   let logits = float_logits out_proj hidden in
   let scaled_logits =
@@ -452,7 +570,12 @@ let next_token_distribution_float ?(temperature = 1.0) ?(top_k = 0) hp body_mode
   in
   let denom = Array.fold_left ( +. ) 0.0 scores in
   let probs = Array.to_list (Array.map (fun score -> score /. denom) scores) in
-  top_k_float_distribution top_k probs
+  if top_k > 0 then
+    top_k_float_distribution top_k probs
+  else if top_p < 1.0 then
+    top_p_float_distribution top_p probs
+  else
+    List.mapi (fun index prob -> (index, prob)) probs
 
 let sample_from_float_distribution rng distribution =
   let threshold = Random.State.float rng 1.0 in
@@ -475,6 +598,16 @@ let rec sampled_generate_float rng fuel hp body_model out_proj tokens temperatur
     let next_token = sample_from_float_distribution rng distribution in
     sampled_generate_float rng (fuel - 1) hp body_model out_proj (tokens @ [next_token]) temperature top_k
 
+let rec sampled_generate_float_top_p rng fuel hp body_model out_proj tokens temperature top_p =
+  if fuel <= 0 then
+    tokens
+  else
+    let distribution =
+      next_token_distribution_float ~temperature ~top_p hp body_model out_proj tokens
+    in
+    let next_token = sample_from_float_distribution rng distribution in
+    sampled_generate_float_top_p rng (fuel - 1) hp body_model out_proj (tokens @ [next_token]) temperature top_p
+
 let string_of_float_distribution distribution =
   distribution
   |> List.map (fun (token, prob) -> Printf.sprintf "%s:%.6f" (word_of_token token) prob)
@@ -485,18 +618,8 @@ let string_of_float_distribution distribution =
 (* Runtime experiment built on top of the verified core.                     *)
 (* ------------------------------------------------------------------------- *)
 
-let training_corpus_text =
-  [
-    "zero one two zero";
-    "one two zero one";
-    "two zero one two";
-  ]
-
 let training_batch =
   List.map encode_text training_corpus_text
-
-let training_prompt =
-  encode_text "two zero"
 
 let print_trace_entry entry =
   Printf.printf "  step=%d logits_loss=%.6f prompt_prediction=%s\n"
@@ -520,6 +643,9 @@ let print_training_demo () =
   let before_sampled =
     sampled_generate_float rng 3 hp body_model base_out_proj training_prompt 1.5 2
   in
+  let before_top_p =
+    sampled_generate_float_top_p rng 3 hp body_model base_out_proj training_prompt 1.5 0.75
+  in
   let trace, trained_out_proj =
     train_output_head
       ~steps
@@ -538,24 +664,40 @@ let print_training_demo () =
   let after_sampled =
     sampled_generate_float rng 3 hp body_model trained_out_proj training_prompt 1.5 2
   in
+  let after_top_p =
+    sampled_generate_float_top_p rng 3 hp body_model trained_out_proj training_prompt 1.5 0.75
+  in
+  let initial_runtime_loss =
+    batch_output_head_loss hp.M.hp_vocab base_out_proj (examples_of_batch hp body_model training_batch)
+  in
+  let final_runtime_loss =
+    batch_output_head_loss hp.M.hp_vocab trained_out_proj (examples_of_batch hp body_model training_batch)
+  in
   Printf.printf "runtime_train_demo\n";
+  Printf.printf "  corpus_source=\"%s\"\n" training_corpus_source;
   Printf.printf "  corpus=%s\n" (string_of_text_list training_corpus_text);
   Printf.printf "  prompt=%s\n" (string_of_int_list training_prompt);
   Printf.printf "  prompt_text=\"%s\"\n" (decode_tokens training_prompt);
   Printf.printf "  learning_rate=%.3f\n" learning_rate;
   Printf.printf "  steps=%d\n" steps;
+  Printf.printf "  initial_runtime_loss=%.6f\n" initial_runtime_loss;
   Printf.printf "  initial_distribution=%s\n" (string_of_float_distribution before_distribution);
   Printf.printf "  initial_greedy=%s\n" (string_of_int_list before_greedy);
   Printf.printf "  initial_greedy_text=\"%s\"\n" (decode_tokens before_greedy);
   Printf.printf "  initial_sampled=%s\n" (string_of_int_list before_sampled);
   Printf.printf "  initial_sampled_text=\"%s\"\n" (decode_tokens before_sampled);
+  Printf.printf "  initial_top_p=%s\n" (string_of_int_list before_top_p);
+  Printf.printf "  initial_top_p_text=\"%s\"\n" (decode_tokens before_top_p);
   Printf.printf "  trace\n";
   List.iter print_trace_entry trace;
+  Printf.printf "  final_runtime_loss=%.6f\n" final_runtime_loss;
   Printf.printf "  final_distribution=%s\n" (string_of_float_distribution after_distribution);
   Printf.printf "  final_greedy=%s\n" (string_of_int_list after_greedy);
   Printf.printf "  final_greedy_text=\"%s\"\n" (decode_tokens after_greedy);
   Printf.printf "  final_sampled=%s\n" (string_of_int_list after_sampled);
-  Printf.printf "  final_sampled_text=\"%s\"\n" (decode_tokens after_sampled)
+  Printf.printf "  final_sampled_text=\"%s\"\n" (decode_tokens after_sampled);
+  Printf.printf "  final_top_p=%s\n" (string_of_int_list after_top_p);
+  Printf.printf "  final_top_p_text=\"%s\"\n" (decode_tokens after_top_p)
 
 (* ------------------------------------------------------------------------- *)
 (* Main entry point.                                                         *)

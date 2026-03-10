@@ -39,6 +39,7 @@ Implemented pieces:
 - formal token encoding and decoding helpers for the demo vocabulary
 - a frozen-body output-head training loop in the OCaml executable
 - deterministic and sampled generation paths in the OCaml executable
+- optional file-backed runtime corpus loading for the OCaml training demo
 
 Scalars are exact rationals (`Q`), not integers. Attention uses the positive kernel
 
@@ -99,6 +100,7 @@ The executable also prints:
 - a before/after loss trace for a cold output head trained against extracted hidden states
 - before/after greedy continuations for the trained output head
 - before/after sampled continuations for the trained output head
+- before/after top-p sampled continuations for the trained output head
 
 Rational outputs are printed as numerator/denominator pairs.
 
@@ -117,6 +119,9 @@ The executable now prints both a formal output-head demo and a formal whole-mode
 demo before the OCaml-side runtime trainer. The runtime trainer remains the
 lighter frozen-body path, while the extracted whole-model demo gives the build
 and CI path a concrete exercised surface for the heavier optimizer definitions.
+For runtime experiments, `main.ml` can also load a small whitespace-tokenized
+corpus from a text file by passing a path on the command line or by setting
+`MICROGPT_CORPUS`.
 
 ## Build
 

@@ -2799,8 +2799,14 @@ Proof.
         Hkeys'
         Hvalues'
         Hgrads').
+      set (tail :=
+        backprop_causal_attention_aux width seen_keys' seen_values'
+          (seq_add (attend_back_keys local) (acc_key_grads ++ [zero_vec width]))
+          (seq_add (attend_back_values local) (acc_value_grads ++ [zero_vec width]))
+          queries keys values grad_outputs') in *.
       destruct IH as [IHquery [IHkeys IHvalues]].
-      cbn.
+      destruct tail as [[query_rest key_rest] value_rest].
+      cbn in *.
       split.
       { constructor.
         - exact Hlocal_query.

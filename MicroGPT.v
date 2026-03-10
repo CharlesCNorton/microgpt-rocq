@@ -2407,6 +2407,7 @@ Proof.
   - unfold matrix_square.
     now rewrite length_map, Hlen.
   - unfold matrix_square.
+    clear Hlen.
     induction Hrows as [|row rows' Hrow Hrows' IH]; simpl.
     + constructor.
     + constructor.
@@ -2425,6 +2426,7 @@ Proof.
   - unfold matrix_add_eps.
     now rewrite length_map, Hlen.
   - unfold matrix_add_eps.
+    clear Hlen.
     induction Hrows as [|row rows' Hrow Hrows' IH]; simpl.
     + constructor.
     + constructor.
@@ -2471,6 +2473,7 @@ Proof.
   - unfold matrix_sqrt_floor.
     now rewrite length_map, Hlen.
   - unfold matrix_sqrt_floor.
+    clear Hlen.
     induction Hrows as [|row rows' Hrow Hrows' IH]; simpl.
     + constructor.
     + constructor.

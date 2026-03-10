@@ -2603,7 +2603,7 @@ Lemma backprop_causal_attention_aux_ok :
     Forall (row_ok width)
       (snd (backprop_causal_attention_aux
         width seen_keys seen_values acc_key_grads acc_value_grads
-        queries keys values grad_outputs))).
+        queries keys values grad_outputs)).
 Proof.
   intros width seen_keys seen_values acc_key_grads acc_value_grads queries.
   revert seen_keys seen_values acc_key_grads acc_value_grads keys values grad_outputs.

@@ -3350,6 +3350,7 @@ Proof.
         as [weight_grad_rest input_grads_rest] eqn:Hrest.
       specialize (IH grads' Hwf Hinputs' Hgrads').
       destruct IH as [Hweight_rest Hinput_rest].
+      rewrite Hrest in Hweight_rest, Hinput_rest.
       split.
       * apply matrix_add_ok.
         -- apply outer_product_ok; assumption.

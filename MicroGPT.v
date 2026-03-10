@@ -2433,7 +2433,8 @@ Proof.
     + constructor.
     + constructor.
       * unfold row_ok in *.
-        now rewrite length_map, Hrow.
+        rewrite length_map.
+        exact Hrow.
       * exact IH.
 Qed.
 
@@ -2481,7 +2482,8 @@ Proof.
     + constructor.
     + constructor.
       * unfold row_ok in *.
-        now rewrite length_map, Hrow.
+        rewrite length_map.
+        exact Hrow.
       * exact IH.
 Qed.
 

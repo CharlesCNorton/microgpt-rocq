@@ -3279,7 +3279,8 @@ Proof.
       destruct scaled as [|y ys].
       * unfold row_ok in Hscaled.
         discriminate.
-      * simpl.
+      * rewrite <- Heqscaled.
+        simpl.
         unfold row_ok in Hscaled.
         simpl in Hscaled.
         inversion Hscaled as [Hys].

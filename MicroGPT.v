@@ -1472,7 +1472,7 @@ Lemma next_token_targets_length :
   forall tokens,
     (length (next_token_targets tokens) <= length tokens)%nat.
 Proof.
-  intros [|tok tokens]; simpl; lia.
+  intros [|tok tokens]; unfold next_token_targets; simpl; lia.
 Qed.
 
 Definition model_sequence_loss (hp : HyperParams) (m : Model) (tokens : list nat)

@@ -424,6 +424,10 @@ Definition normalize_vec
   then zero_vec width
   else vec_scale (/ denom) numerator.
 
+Arguments attend_numerator _ _ _ _ _ : simpl never.
+Arguments attend_denominator _ _ _ : simpl never.
+Arguments normalize_vec _ _ _ : simpl never.
+
 Definition attend
   (width : nat)
   (query : Vector)
@@ -433,6 +437,8 @@ Definition attend
   normalize_vec width
     (attend_denominator pivot query keys)
     (attend_numerator pivot query keys values (zero_vec width)).
+
+Arguments attend _ _ _ _ : simpl never.
 
 Lemma attend_numerator_row_ok :
   forall width pivot query keys values acc,
@@ -501,6 +507,9 @@ Definition causal_attention
   (queries keys values : list Vector)
   : list Vector :=
   causal_attention_aux width [] [] queries keys values.
+
+Arguments causal_attention_aux _ _ _ _ _ _ : simpl never.
+Arguments causal_attention _ _ _ _ : simpl never.
 
 Lemma causal_attention_aux_length :
   forall width seen_keys seen_values queries keys values,
@@ -714,6 +723,8 @@ Definition embed_tokens (hp : HyperParams) (m : Model) (tokens : list nat)
 Definition logits_for_hidden (m : Model) (hidden : Vector) : Vector :=
   mat_vec_mul (model_out_proj m) hidden.
 
+Arguments logits_for_hidden _ _ : simpl never.
+
 Definition transformer_block (hp : HyperParams) (m : Model) (hidden : list Vector)
   : list Vector :=
   let queries := project_all (model_w_q m) hidden in
@@ -779,9 +790,13 @@ Definition forward (hp : HyperParams) (m : Model) (tokens : list nat)
   : list Vector :=
   map (logits_for_hidden m) (hidden_states hp m tokens).
 
+Arguments forward _ _ _ : simpl never.
+
 Definition forward_recompute (hp : HyperParams) (m : Model) (tokens : list nat)
   : list Vector :=
   map (logits_for_hidden m) (hidden_states_recompute hp m tokens).
+
+Arguments forward_recompute _ _ _ : simpl never.
 
 (** * Shape theorems for the model. *)
 
@@ -1126,12 +1141,16 @@ Definition forward_with_positions
   : list Vector :=
   map (logits_for_hidden m) (hidden_states_with_positions hp m tokens).
 
+Arguments forward_with_positions _ _ _ : simpl never.
+
 Definition forward_with_positions_recompute
   (hp : HyperParams)
   (m : Model)
   (tokens : list nat)
   : list Vector :=
   map (logits_for_hidden m) (hidden_states_with_positions_recompute hp m tokens).
+
+Arguments forward_with_positions_recompute _ _ _ : simpl never.
 
 Lemma one_hot_vector_aux_length :
   forall remaining target idx,
@@ -1357,11 +1376,15 @@ Fixpoint sum_scalars (xs : list Scalar) : Scalar :=
   | x :: xs' => x + sum_scalars xs'
   end.
 
+Arguments sum_scalars _ : simpl never.
+
 Definition mean_scalars (xs : list Scalar) : Scalar :=
   match xs with
   | [] => 0
   | _ => sum_scalars xs / q_of_nat (length xs)
   end.
+
+Arguments mean_scalars _ : simpl never.
 
 Definition normalized_output_distribution (logits : Vector) : Vector :=
   let scores := softmax_scores logits in
@@ -1377,6 +1400,8 @@ Definition predict_next (hp : HyperParams) (m : Model) (tokens : list nat) : nat
   let final_logits := last logits (zero_vec (hp_vocab hp)) in
   argmax (normalized_output_distribution final_logits).
 
+Arguments predict_next _ _ _ : simpl never.
+
 Definition predict_next_with_positions
   (hp : HyperParams)
   (m : Model)
@@ -1385,6 +1410,8 @@ Definition predict_next_with_positions
   let logits := forward_with_positions hp m tokens in
   let final_logits := last logits (zero_vec (hp_vocab hp)) in
   argmax (normalized_output_distribution final_logits).
+
+Arguments predict_next_with_positions _ _ _ : simpl never.
 
 Definition cross_entropy_probability_floor : Scalar := 1 / q_of_nat 1024.
 
@@ -1433,12 +1460,18 @@ Fixpoint sequence_token_losses (logits_seq : list Vector) (targets : list nat)
   | _, _ => []
   end.
 
+Arguments sequence_token_losses _ _ : simpl never.
+
 Definition sequence_distribution_loss (logits_seq : list Vector) (targets : list nat)
   : Scalar :=
   mean_scalars (sequence_token_losses logits_seq targets).
 
+Arguments sequence_distribution_loss _ _ : simpl never.
+
 Definition next_token_targets (tokens : list nat) : list nat :=
   tl tokens.
+
+Arguments next_token_targets _ : simpl never.
 
 Lemma next_token_targets_length :
   forall tokens,
@@ -2406,6 +2439,8 @@ Fixpoint backprop_attend_aux
       |}
   end.
 
+Arguments backprop_attend_aux _ _ _ _ _ _ _ _ : simpl never.
+
 Definition backprop_attend
   (width : nat)
   (query : Vector)
@@ -2423,6 +2458,8 @@ Definition backprop_attend
     |}
   else
     backprop_attend_aux width pivot query keys values (attend width query keys values) grad_out denom.
+
+Arguments backprop_attend _ _ _ _ _ : simpl never.
 
 Fixpoint backprop_causal_attention_aux
   (width : nat)
@@ -2468,6 +2505,9 @@ Definition backprop_causal_attention
     keys
     values
     grad_outputs.
+
+Arguments backprop_causal_attention_aux _ _ _ _ _ _ _ _ _ : simpl never.
+Arguments backprop_causal_attention _ _ _ _ _ : simpl never.
 
 Lemma backprop_attend_aux_lengths :
   forall width pivot query keys values output grad_out denom,
@@ -3958,6 +3998,8 @@ Definition token_distribution_loss_grad
   let targets := one_hot_vector (length logits) target in
   vec_sub probs targets.
 
+Arguments token_distribution_loss_grad _ _ : simpl never.
+
 Fixpoint sequence_logits_loss_grad_raw
   (logits_seq : list Vector)
   (targets : list nat)
@@ -3980,6 +4022,9 @@ Definition sequence_logits_loss_grad
         (vec_scale (/ q_of_nat (length targets)))
         (sequence_logits_loss_grad_raw logits_seq targets)
   end.
+
+Arguments sequence_logits_loss_grad_raw _ _ : simpl never.
+Arguments sequence_logits_loss_grad _ _ : simpl never.
 
 Lemma sequence_logits_loss_grad_raw_length :
   forall logits_seq targets,
@@ -4017,6 +4062,8 @@ Definition sequence_loss_grad_for_tokens
   sequence_logits_loss_grad
     (firstn (length targets) (tape_logits_full tape))
     targets.
+
+Arguments sequence_loss_grad_for_tokens _ _ _ : simpl never.
 
 Definition full_model_grad_from_tape
   (hp : HyperParams)
@@ -4099,12 +4146,16 @@ Definition full_model_grad_from_tape
     grad_model_out_proj := grad_out_proj
   |}.
 
+Arguments full_model_grad_from_tape _ _ _ : simpl never.
+
 Definition full_model_grad_tokens
   (hp : HyperParams)
   (m : Model)
   (tokens : list nat)
   : ModelGrad :=
   full_model_grad_from_tape hp m (build_transformer_tape hp m tokens).
+
+Arguments full_model_grad_tokens _ _ _ : simpl never.
 
 Fixpoint full_model_grad_batch_sum
   (hp : HyperParams)
@@ -4119,6 +4170,8 @@ Fixpoint full_model_grad_batch_sum
         (full_model_grad_batch_sum hp m batch')
   end.
 
+Arguments full_model_grad_batch_sum _ _ _ : simpl never.
+
 Definition full_model_grad_batch
   (hp : HyperParams)
   (m : Model)
@@ -4131,6 +4184,8 @@ Definition full_model_grad_batch
         (/ q_of_nat (length batch))
         (full_model_grad_batch_sum hp m batch)
   end.
+
+Arguments full_model_grad_batch _ _ _ : simpl never.
 
 Lemma token_distribution_loss_grad_row_ok :
   forall logits target,
@@ -4387,6 +4442,8 @@ Definition model_batch_loss
   : Scalar :=
   mean_scalars (map (model_sequence_loss hp m) batch).
 
+Arguments model_batch_loss _ _ _ : simpl never.
+
 Definition apply_model_sgd_step
   (learning_rate : Scalar)
   (hp : HyperParams)
@@ -4395,6 +4452,8 @@ Definition apply_model_sgd_step
   : Model :=
   let grad := normalize_model_grad (full_model_grad_batch hp m batch) in
   model_apply_grad m (model_grad_scale (- learning_rate) grad).
+
+Arguments apply_model_sgd_step _ _ _ _ : simpl never.
 
 Fixpoint train_model_sgd
   (fuel : nat)
@@ -4410,6 +4469,8 @@ Fixpoint train_model_sgd
         (apply_model_sgd_step learning_rate hp m batch)
         batch
   end.
+
+Arguments train_model_sgd _ _ _ _ _ : simpl never.
 
 Record AdamState := {
   adam_model : Model;
@@ -4482,6 +4543,8 @@ Definition apply_model_adam_step
     adam_steps := S (adam_steps state)
   |}.
 
+Arguments apply_model_adam_step _ _ _ _ _ : simpl never.
+
 Fixpoint train_model_adam
   (fuel : nat)
   (learning_rate beta1 beta2 eps : Scalar)
@@ -4496,6 +4559,8 @@ Fixpoint train_model_adam
         (apply_model_adam_step learning_rate beta1 beta2 eps hp state batch)
         batch
   end.
+
+Arguments train_model_adam _ _ _ _ _ _ : simpl never.
 
 Lemma full_model_grad_tokens_wf :
   forall hp m tokens,
@@ -5389,6 +5454,8 @@ Definition predict_next_top_k
   let hidden := last_hidden_state hp m tokens in
   top_pair_token 0 (top_k_pairs temperature (logits_for_hidden m hidden) k).
 
+Arguments predict_next_top_k _ _ _ _ _ : simpl never.
+
 Definition predict_next_top_p
   (hp : HyperParams)
   (m : Model)
@@ -5397,6 +5464,8 @@ Definition predict_next_top_p
   : nat :=
   let hidden := last_hidden_state hp m tokens in
   top_pair_token 0 (top_p_pairs temperature cutoff (logits_for_hidden m hidden)).
+
+Arguments predict_next_top_p _ _ _ _ _ : simpl never.
 
 Fixpoint greedy_generate_top_k
   (fuel : nat)

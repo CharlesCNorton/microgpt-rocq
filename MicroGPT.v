@@ -2593,15 +2593,15 @@ Lemma backprop_causal_attention_aux_ok :
     Forall (row_ok width) values ->
     Forall (row_ok width) grad_outputs ->
     Forall (row_ok width)
-      (fst (backprop_causal_attention_aux
-        width seen_keys seen_values acc_key_grads acc_value_grads
-        queries keys values grad_outputs)) /\
-    Forall (row_ok width)
-      (fst (snd (backprop_causal_attention_aux
+      (fst (fst (backprop_causal_attention_aux
         width seen_keys seen_values acc_key_grads acc_value_grads
         queries keys values grad_outputs))) /\
     Forall (row_ok width)
-      (snd (snd (backprop_causal_attention_aux
+      (snd (fst (backprop_causal_attention_aux
+        width seen_keys seen_values acc_key_grads acc_value_grads
+        queries keys values grad_outputs))) /\
+    Forall (row_ok width)
+      (snd (backprop_causal_attention_aux
         width seen_keys seen_values acc_key_grads acc_value_grads
         queries keys values grad_outputs))).
 Proof.
@@ -2760,11 +2760,11 @@ Lemma backprop_causal_attention_ok :
     Forall (row_ok width) values ->
     Forall (row_ok width) grad_outputs ->
     Forall (row_ok width)
-      (fst (backprop_causal_attention width queries keys values grad_outputs)) /\
+      (fst (fst (backprop_causal_attention width queries keys values grad_outputs))) /\
     Forall (row_ok width)
-      (fst (snd (backprop_causal_attention width queries keys values grad_outputs))) /\
+      (snd (fst (backprop_causal_attention width queries keys values grad_outputs))) /\
     Forall (row_ok width)
-      (snd (snd (backprop_causal_attention width queries keys values grad_outputs))).
+      (snd (backprop_causal_attention width queries keys values grad_outputs)).
 Proof.
   intros width queries keys values grad_outputs Hqueries Hkeys Hvalues Hgrads.
   unfold backprop_causal_attention.

@@ -2670,9 +2670,9 @@ Proof.
       {
         subst local seen_keys' seen_values'.
         apply backprop_attend_lengths.
-        rewrite app_length, app_length.
+        rewrite !app_length.
         simpl.
-        exact (f_equal S Hseen_len).
+        lia.
       }
       destruct Hlocal_len as [Hlocal_keys_len Hlocal_values_len].
       assert (Hacc_keys_app :

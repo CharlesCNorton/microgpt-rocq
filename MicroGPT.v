@@ -924,7 +924,7 @@ Definition argmax (xs : Vector) : nat :=
 Definition predict_next (hp : HyperParams) (m : Model) (tokens : list nat) : nat :=
   let logits := forward hp m tokens in
   let final_logits := last logits (zero_vec (hp_vocab hp)) in
-  argmax final_logits.
+  argmax (normalized_output_distribution final_logits).
 
 (** * Sequence-level language-model surface. *)
 

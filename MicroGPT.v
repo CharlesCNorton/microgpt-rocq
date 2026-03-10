@@ -162,6 +162,26 @@ Proof.
   induction xs as [|x xs IH]; simpl; auto.
 Qed.
 
+Lemma vec_scale_row_ok :
+  forall width k xs,
+    row_ok width xs ->
+    row_ok width (vec_scale k xs).
+Proof.
+  intros width k xs Hxs.
+  unfold row_ok in *.
+  now rewrite vec_scale_length.
+Qed.
+
+Lemma map_row_ok :
+  forall width (f : Scalar -> Scalar) xs,
+    row_ok width xs ->
+    row_ok width (map f xs).
+Proof.
+  intros width f xs Hxs.
+  unfold row_ok in *.
+  now rewrite map_length.
+Qed.
+
 Lemma vec_add_length :
   forall xs ys,
     length xs = length ys ->
@@ -1354,6 +1374,13 @@ Definition sequence_distribution_loss (logits_seq : list Vector) (targets : list
 
 Definition next_token_targets (tokens : list nat) : list nat :=
   tl tokens.
+
+Lemma next_token_targets_length :
+  forall tokens,
+    length (next_token_targets tokens) <= length tokens.
+Proof.
+  intros [|tok tokens]; simpl; lia.
+Qed.
 
 Definition model_sequence_loss (hp : HyperParams) (m : Model) (tokens : list nat)
   : Scalar :=
@@ -3203,6 +3230,255 @@ Definition full_model_grad_batch
         (/ q_of_nat (length batch))
         (full_model_grad_batch_sum hp m batch)
   end.
+
+Lemma token_distribution_loss_grad_row_ok :
+  forall logits target,
+    row_ok (length logits) (token_distribution_loss_grad logits target).
+Proof.
+  intros logits target.
+  unfold token_distribution_loss_grad.
+  destruct logits as [|logit logits']; simpl.
+  - reflexivity.
+  - remember (normalized_output_distribution (logit :: logits')) as probs.
+    remember (one_hot_vector (S (length logits')) target) as targets.
+    remember
+      (vec_scale (2 / q_of_nat (S (length logits')))
+         (vec_sub probs targets)) as gp.
+    remember (output_scores (logit :: logits')) as scores.
+    remember (sum_scalars scores) as denom.
+    assert (Hprobs : row_ok (S (length logits')) probs).
+    {
+      subst probs.
+      apply normalized_output_distribution_row_ok.
+    }
+    assert (Htargets : row_ok (S (length logits')) targets).
+    {
+      subst targets.
+      apply one_hot_vector_row_ok.
+    }
+    assert (Hgp : row_ok (S (length logits')) gp).
+    {
+      subst gp.
+      apply vec_scale_row_ok.
+      apply vec_sub_row_ok; assumption.
+    }
+    destruct (Qeq_bool denom 0); simpl.
+    + apply row_ok_zero_vec.
+    + apply vec_hadamard_row_ok.
+      * apply map_row_ok.
+        reflexivity.
+      * apply vec_scale_row_ok.
+        apply vec_sub_row_ok.
+        -- exact Hgp.
+        -- apply row_ok_const_vec.
+Qed.
+
+Lemma sequence_logits_loss_grad_raw_row_ok :
+  forall width logits_seq targets,
+    Forall (row_ok width) logits_seq ->
+    Forall (row_ok width) (sequence_logits_loss_grad_raw logits_seq targets).
+Proof.
+  intros width logits_seq targets Hlogits.
+  revert targets.
+  induction Hlogits as [|logits logits_seq Hlogits Hlogits_seq IH];
+    intros targets; destruct targets as [|target targets']; simpl.
+  - constructor.
+  - constructor.
+  - constructor.
+  - constructor.
+    + unfold row_ok in Hlogits.
+      rewrite <- Hlogits.
+      apply token_distribution_loss_grad_row_ok.
+    + apply IH.
+Qed.
+
+Lemma sequence_logits_loss_grad_row_ok :
+  forall width logits_seq targets,
+    Forall (row_ok width) logits_seq ->
+    Forall (row_ok width) (sequence_logits_loss_grad logits_seq targets).
+Proof.
+  intros width logits_seq targets Hlogits.
+  unfold sequence_logits_loss_grad.
+  destruct targets as [|target targets']; simpl.
+  - constructor.
+  - remember (sequence_logits_loss_grad_raw logits_seq (target :: targets'))
+      as grads eqn:Hgrads.
+    assert (Hrows : Forall (row_ok width) grads).
+    {
+      subst grads.
+      apply sequence_logits_loss_grad_raw_row_ok.
+      exact Hlogits.
+    }
+    clear Hgrads.
+    induction Hrows as [|grad grads Hgrad Hgrads IH]; simpl.
+    + constructor.
+    + constructor.
+      * apply vec_scale_row_ok.
+        exact Hgrad.
+      * exact IH.
+Qed.
+
+Lemma seq_of_matrix_backprops_ok :
+  forall rows width w inputs grads,
+    matrix_ok rows width w ->
+    Forall (row_ok width) inputs ->
+    Forall (row_ok rows) grads ->
+    matrix_ok rows width (fst (seq_of_matrix_backprops width w inputs grads)) /\
+    Forall (row_ok width) (snd (seq_of_matrix_backprops width w inputs grads)).
+Proof.
+  intros rows width w inputs.
+  induction inputs as [|input inputs IH]; intros grads Hwf Hinputs Hgrads.
+  - destruct grads; simpl.
+    + split; [apply zero_matrix_ok | constructor].
+    + split; [apply zero_matrix_ok | constructor].
+  - inversion Hinputs as [|? ? Hinput Hinputs']; subst.
+    destruct grads as [|grad grads']; simpl.
+    + split; [apply zero_matrix_ok | constructor].
+    + inversion Hgrads as [|? ? Hgrad Hgrads']; subst.
+      destruct (seq_of_matrix_backprops width w inputs grads')
+        as [weight_grad_rest input_grads_rest] eqn:Hrest.
+      specialize (IH grads' Hwf Hinputs' Hgrads').
+      destruct IH as [Hweight_rest Hinput_rest].
+      split.
+      * apply matrix_add_ok.
+        -- apply outer_product_ok; assumption.
+        -- exact Hweight_rest.
+      * constructor.
+        -- eapply mat_T_vec_mul_row_ok; eauto.
+        -- exact Hinput_rest.
+Qed.
+
+Lemma backprop_feed_forward_ok :
+  forall d_model d_hidden w1 w2 input grad_out,
+    matrix_ok d_hidden d_model w1 ->
+    matrix_ok d_model d_hidden w2 ->
+    row_ok d_model input ->
+    row_ok d_model grad_out ->
+    matrix_ok d_hidden d_model
+      (ff_back_w1 (backprop_feed_forward d_model d_hidden w1 w2 input grad_out)) /\
+    matrix_ok d_model d_hidden
+      (ff_back_w2 (backprop_feed_forward d_model d_hidden w1 w2 input grad_out)) /\
+    row_ok d_model
+      (ff_back_input (backprop_feed_forward d_model d_hidden w1 w2 input grad_out)).
+Proof.
+  intros d_model d_hidden w1 w2 input grad_out Hw1 Hw2 Hinput Hgrad_out.
+  unfold backprop_feed_forward.
+  assert (Hpre1 : row_ok d_hidden (mat_vec_mul w1 input)).
+  {
+    eapply mat_vec_mul_row_ok; eauto.
+  }
+  assert (Hhidden : row_ok d_hidden (map relu (mat_vec_mul w1 input))).
+  {
+    apply map_row_ok.
+    exact Hpre1.
+  }
+  assert (Hgrad_hidden : row_ok d_hidden (mat_T_vec_mul d_hidden w2 grad_out)).
+  {
+    eapply mat_T_vec_mul_row_ok; eauto.
+  }
+  assert (Hgrad_pre1 :
+    row_ok d_hidden
+      (relu_backprop (mat_vec_mul w1 input) (mat_T_vec_mul d_hidden w2 grad_out))).
+  {
+    unfold relu_backprop.
+    apply vec_hadamard_row_ok.
+    - apply vec_relu_mask_row_ok.
+      exact Hpre1.
+    - exact Hgrad_hidden.
+  }
+  repeat split.
+  - apply outer_product_ok; assumption.
+  - apply outer_product_ok; assumption.
+  - eapply mat_T_vec_mul_row_ok; eauto.
+Qed.
+
+Lemma backprop_feed_forward_sequence_ok :
+  forall d_model d_hidden w1 w2 inputs grads_out grad_w1 grad_w2 grad_inputs,
+    matrix_ok d_hidden d_model w1 ->
+    matrix_ok d_model d_hidden w2 ->
+    Forall (row_ok d_model) inputs ->
+    Forall (row_ok d_model) grads_out ->
+    backprop_feed_forward_sequence d_model d_hidden w1 w2 inputs grads_out =
+      (grad_w1, grad_w2, grad_inputs) ->
+    matrix_ok d_hidden d_model grad_w1 /\
+    matrix_ok d_model d_hidden grad_w2 /\
+    Forall (row_ok d_model) grad_inputs.
+Proof.
+  intros d_model d_hidden w1 w2 inputs.
+  induction inputs as [|input inputs IH];
+    intros grads_out grad_w1 grad_w2 grad_inputs Hw1 Hw2 Hinputs Hgrads Heq.
+  - destruct grads_out; simpl in Heq;
+      inversion Heq; subst; repeat split; try apply zero_matrix_ok; constructor.
+  - inversion Hinputs as [|? ? Hinput Hinputs']; subst.
+    destruct grads_out as [|grad_out grads_out']; simpl in Heq.
+    + inversion Heq; subst.
+      repeat split; try apply zero_matrix_ok; constructor.
+    + inversion Hgrads as [|? ? Hgrad_out Hgrads_out']; subst.
+      remember (backprop_feed_forward d_model d_hidden w1 w2 input grad_out)
+        as local.
+      destruct local as [local_w1 local_w2 local_input].
+      destruct (backprop_feed_forward_sequence d_model d_hidden w1 w2 inputs grads_out')
+        as [[w1_rest w2_rest] input_rest] eqn:Hrest.
+      inversion Heq; subst; clear Heq.
+      pose proof
+        (backprop_feed_forward_ok d_model d_hidden w1 w2 input grad_out
+          Hw1 Hw2 Hinput Hgrad_out)
+        as [Hlocal_w1 [Hlocal_w2 Hlocal_input]].
+      pose proof
+        (IH grads_out' w1_rest w2_rest input_rest
+          Hw1 Hw2 Hinputs' Hgrads_out' Hrest)
+        as [Hrest_w1 [Hrest_w2 Hrest_inputs]].
+      split.
+      * apply matrix_add_ok; assumption.
+      * split.
+        -- apply matrix_add_ok; assumption.
+        -- constructor.
+           ++ exact Hlocal_input.
+           ++ exact Hrest_inputs.
+Qed.
+
+Lemma embedding_grad_for_token_ok :
+  forall rows cols tok grad,
+    row_ok cols grad ->
+    matrix_ok rows cols (embedding_grad_for_token rows cols tok grad).
+Proof.
+  intros rows cols tok grad Hgrad.
+  induction rows as [|rows IH]; simpl.
+  - apply zero_matrix_ok.
+  - destruct tok as [|tok'].
+    + split.
+      * simpl.
+        exact (f_equal S (proj1 (zero_matrix_ok rows cols))).
+      * constructor.
+        -- exact Hgrad.
+        -- exact (proj2 (zero_matrix_ok rows cols)).
+    + split.
+      * simpl.
+        destruct IH as [IHlen _].
+        simpl.
+        now rewrite IHlen.
+      * constructor.
+        -- apply row_ok_zero_vec.
+        -- exact (proj2 IH).
+Qed.
+
+Lemma embedding_grads_from_inputs_ok :
+  forall rows cols tokens grads,
+    Forall (row_ok cols) grads ->
+    matrix_ok rows cols (embedding_grads_from_inputs rows cols tokens grads).
+Proof.
+  intros rows cols tokens.
+  induction tokens as [|tok tokens IH]; intros grads Hgrads.
+  - destruct grads; simpl; apply zero_matrix_ok.
+  - destruct grads as [|grad grads']; simpl.
+    + apply zero_matrix_ok.
+    + inversion Hgrads as [|? ? Hgrad Hgrads']; subst.
+      apply matrix_add_ok.
+      * apply embedding_grad_for_token_ok.
+        exact Hgrad.
+      * apply IH.
+        exact Hgrads'.
+Qed.
 
 Definition model_batch_loss
   (hp : HyperParams)

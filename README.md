@@ -1,18 +1,18 @@
 # microgpt-rocq
 
-`microgpt-rocq` is a monolithic Rocq formalization of a small transformer-style language-model core with OCaml extraction.
+`microgpt-rocq` is a monolithic Rocq formalization of a transformer language-model core with exact rational semantics, verified training surfaces, and OCaml extraction.
 
 The repository contains:
 
 - a single theorem-bearing Rocq development in `MicroGPT.v`
-- a small OCaml driver in `main.ml`
-- a small checked-in text corpus in `data/demo_corpus.txt`
+- an OCaml driver in `main.ml`
+- a checked-in text corpus in `data/demo_corpus.txt`
 - extracted OCaml artifacts generated from the Rocq source
 - a GitHub Actions workflow that proves, extracts, builds, and runs the executable
 
 ## What Is Implemented
 
-The current model is a compact transformer-style language-model core with attached verified training and generation surfaces.
+The model is a transformer language-model core with verified training and generation surfaces.
 
 Implemented pieces:
 

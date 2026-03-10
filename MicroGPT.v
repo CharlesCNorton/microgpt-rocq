@@ -3,14 +3,14 @@
   *
   * This file is intentionally monolithic.
   *
-  * The artifact in this file is a small transformer-style language-model core
+  * The artifact in this file is a transformer language-model core
   * with exact rational arithmetic, verified structural properties, a verified
   * reverse-mode readout head, OCaml extraction, and a runnable executable
   * surface.
   *
-  * The development aims for a compact but credible theorem-bearing baseline:
+  * The development establishes a theorem-bearing baseline:
   *
-  * 1. a transformer-shaped forward pass,
+  * 1. a transformer forward pass,
   * 2. true normalized attention over exact rationals,
   * 3. a trainable readout surface with reverse-mode gradients,
   * 4. multiple concrete demos,
@@ -24,11 +24,11 @@
   *   normalization by the sum of the prefix scores.
   * - Invalid token indices fall back to the zero vector, which keeps lookup
   *   total and the extracted program robust.
-  * - The training surface in this file is intentionally small: a linear
+  * - The training surface in this file is a linear
   *   readout head on top of the final hidden state with squared loss and a
   *   reverse-mode backward pass.
   *
-  * Even with those simplifications, the file still contains:
+  * The file contains:
   *
   * - token embeddings,
   * - query/key/value projections,
@@ -968,6 +968,165 @@ Proof.
   now rewrite hidden_states_recompute_eq.
 Qed.
 
+Lemma one_hot_vector_aux_length :
+  forall remaining target idx,
+    length (one_hot_vector_aux remaining target idx) = remaining.
+Proof.
+  induction remaining as [|remaining IH]; intros target idx; simpl.
+  - reflexivity.
+  - now rewrite IH.
+Qed.
+
+Lemma one_hot_vector_row_ok :
+  forall width target,
+    row_ok width (one_hot_vector width target).
+Proof.
+  intros width target.
+  unfold one_hot_vector, row_ok.
+  apply one_hot_vector_aux_length.
+Qed.
+
+Lemma position_vector_row_ok :
+  forall width pos,
+    row_ok width (position_vector width pos).
+Proof.
+  intros width pos.
+  destruct width as [|width']; simpl.
+  - reflexivity.
+  - destruct (Nat.eqb pos 0) eqn:Hpos.
+    + apply row_ok_zero_vec.
+    + unfold row_ok.
+      rewrite vec_scale_length.
+      apply one_hot_vector_row_ok.
+Qed.
+
+Lemma embed_tokens_with_positions_aux_length :
+  forall hp m pos tokens,
+    length (embed_tokens_with_positions_aux hp m pos tokens) = length tokens.
+Proof.
+  intros hp m pos tokens.
+  induction tokens as [|tok tokens IH]; simpl.
+  - reflexivity.
+  - now rewrite IH.
+Qed.
+
+Lemma embed_tokens_with_positions_length :
+  forall hp m tokens,
+    length (embed_tokens_with_positions hp m tokens) = length tokens.
+Proof.
+  intros hp m tokens.
+  unfold embed_tokens_with_positions.
+  apply embed_tokens_with_positions_aux_length.
+Qed.
+
+Lemma embed_tokens_with_positions_aux_row_ok :
+  forall hp m pos tokens,
+    model_wf hp m ->
+    Forall (row_ok (hp_d_model hp))
+      (embed_tokens_with_positions_aux hp m pos tokens).
+Proof.
+  intros hp m pos tokens Hwf.
+  induction tokens as [|tok tokens IH]; simpl.
+  - constructor.
+  - constructor.
+    + destruct Hwf as [Hemb _].
+      apply vec_add_row_ok.
+      * apply lookup_embedding_row_ok.
+        exact (proj2 Hemb).
+      * apply position_vector_row_ok.
+    + apply IH.
+      exact Hwf.
+Qed.
+
+Lemma embed_tokens_with_positions_row_ok :
+  forall hp m tokens,
+    model_wf hp m ->
+    Forall (row_ok (hp_d_model hp))
+      (embed_tokens_with_positions hp m tokens).
+Proof.
+  intros hp m tokens Hwf.
+  unfold embed_tokens_with_positions.
+  apply embed_tokens_with_positions_aux_row_ok.
+  exact Hwf.
+Qed.
+
+Lemma hidden_states_with_positions_length :
+  forall hp m tokens,
+    model_wf hp m ->
+    length (hidden_states_with_positions hp m tokens) = length tokens.
+Proof.
+  intros hp m tokens Hwf.
+  unfold hidden_states_with_positions.
+  rewrite transformer_stack_length; auto.
+  apply embed_tokens_with_positions_length.
+Qed.
+
+Lemma hidden_states_with_positions_row_ok :
+  forall hp m tokens,
+    model_wf hp m ->
+    Forall (row_ok (hp_d_model hp))
+      (hidden_states_with_positions hp m tokens).
+Proof.
+  intros hp m tokens Hwf.
+  unfold hidden_states_with_positions.
+  apply transformer_stack_row_ok.
+  - exact Hwf.
+  - apply embed_tokens_with_positions_row_ok.
+    exact Hwf.
+Qed.
+
+Lemma hidden_states_with_positions_recompute_eq :
+  forall hp m tokens,
+    hidden_states_with_positions hp m tokens =
+    hidden_states_with_positions_recompute hp m tokens.
+Proof.
+  intros hp m tokens.
+  unfold hidden_states_with_positions, hidden_states_with_positions_recompute.
+  apply transformer_stack_recompute_eq.
+Qed.
+
+Lemma forward_with_positions_length :
+  forall hp m tokens,
+    model_wf hp m ->
+    length (forward_with_positions hp m tokens) = length tokens.
+Proof.
+  intros hp m tokens Hwf.
+  unfold forward_with_positions.
+  rewrite length_map.
+  apply hidden_states_with_positions_length.
+  exact Hwf.
+Qed.
+
+Lemma forward_with_positions_row_ok :
+  forall hp m tokens,
+    model_wf hp m ->
+    Forall (row_ok (hp_vocab hp)) (forward_with_positions hp m tokens).
+Proof.
+  intros hp m tokens Hwf.
+  destruct Hwf as [Hemb [Hwq [Hwk [Hwv [Hwo [Hw1 [Hw2 Hout]]]]]]].
+  unfold forward_with_positions.
+  eapply project_all_row_ok.
+  - exact Hout.
+  - apply hidden_states_with_positions_row_ok.
+    exact (conj Hemb
+      (conj Hwq
+      (conj Hwk
+      (conj Hwv
+      (conj Hwo
+      (conj Hw1
+      (conj Hw2 Hout))))))).
+Qed.
+
+Lemma forward_with_positions_recompute_eq :
+  forall hp m tokens,
+    forward_with_positions hp m tokens =
+    forward_with_positions_recompute hp m tokens.
+Proof.
+  intros hp m tokens.
+  unfold forward_with_positions, forward_with_positions_recompute.
+  now rewrite hidden_states_with_positions_recompute_eq.
+Qed.
+
 (** * Argmax for next-token prediction. *)
 
 Fixpoint argmax_aux
@@ -1045,6 +1204,73 @@ Fixpoint one_hot_vector_aux (remaining target idx : nat) : Vector :=
 Definition one_hot_vector (width target : nat) : Vector :=
   one_hot_vector_aux width target 0.
 
+(** Positional information is kept exact and total through a small deterministic
+    additive signal.  Position zero stays unchanged so the smallest one-token
+    demos remain stable, while later positions receive a sparse rational bump. *)
+Definition position_scale : Scalar := 1 / 16.
+
+Definition position_vector (width pos : nat) : Vector :=
+  match width with
+  | O => []
+  | S width' =>
+      if Nat.eqb pos 0
+      then zero_vec (S width')
+      else vec_scale position_scale
+        (one_hot_vector (S width') (Nat.modulo pos (S width')))
+  end.
+
+Fixpoint embed_tokens_with_positions_aux
+  (hp : HyperParams)
+  (m : Model)
+  (pos : nat)
+  (tokens : list nat)
+  : list Vector :=
+  match tokens with
+  | [] => []
+  | tok :: tokens' =>
+      vec_add
+        (lookup_embedding hp (model_embeddings m) tok)
+        (position_vector (hp_d_model hp) pos)
+      :: embed_tokens_with_positions_aux hp m (S pos) tokens'
+  end.
+
+Definition embed_tokens_with_positions
+  (hp : HyperParams)
+  (m : Model)
+  (tokens : list nat)
+  : list Vector :=
+  embed_tokens_with_positions_aux hp m 0 tokens.
+
+Definition hidden_states_with_positions
+  (hp : HyperParams)
+  (m : Model)
+  (tokens : list nat)
+  : list Vector :=
+  transformer_stack (hp_layers hp) hp m
+    (embed_tokens_with_positions hp m tokens).
+
+Definition hidden_states_with_positions_recompute
+  (hp : HyperParams)
+  (m : Model)
+  (tokens : list nat)
+  : list Vector :=
+  transformer_stack_recompute (hp_layers hp) hp m
+    (embed_tokens_with_positions hp m tokens).
+
+Definition forward_with_positions
+  (hp : HyperParams)
+  (m : Model)
+  (tokens : list nat)
+  : list Vector :=
+  map (logits_for_hidden m) (hidden_states_with_positions hp m tokens).
+
+Definition forward_with_positions_recompute
+  (hp : HyperParams)
+  (m : Model)
+  (tokens : list nat)
+  : list Vector :=
+  map (logits_for_hidden m) (hidden_states_with_positions_recompute hp m tokens).
+
 (** Output probabilities use a monotone exact score map rather than the older
     squared-score trick.  Nonpositive logits are compressed through a positive
     reciprocal branch, while positive logits remain linear.  This keeps every
@@ -1071,6 +1297,15 @@ Definition normalized_output_distribution (logits : Vector) : Vector :=
 
 Definition predict_next (hp : HyperParams) (m : Model) (tokens : list nat) : nat :=
   let logits := forward hp m tokens in
+  let final_logits := last logits (zero_vec (hp_vocab hp)) in
+  argmax (normalized_output_distribution final_logits).
+
+Definition predict_next_with_positions
+  (hp : HyperParams)
+  (m : Model)
+  (tokens : list nat)
+  : nat :=
+  let logits := forward_with_positions hp m tokens in
   let final_logits := last logits (zero_vec (hp_vocab hp)) in
   argmax (normalized_output_distribution final_logits).
 

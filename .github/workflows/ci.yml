@@ -26,7 +26,7 @@ jobs:
             endGroup
           script: |
             startGroup "Prove and extract"
-              coqc MicroGPT.v
+              rocq compile MicroGPT.v
             endGroup
             startGroup "Build OCaml executable"
               ocamlopt -c microgpt_extracted.mli

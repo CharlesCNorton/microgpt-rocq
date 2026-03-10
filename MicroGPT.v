@@ -3743,8 +3743,9 @@ Proof.
   intros logits_seq targets.
   unfold sequence_logits_loss_grad.
   destruct targets as [|target targets']; simpl.
-  - reflexivity.
-  - rewrite map_length.
+  - rewrite Nat.min_0_r.
+    reflexivity.
+  - rewrite length_map.
     apply sequence_logits_loss_grad_raw_length.
 Qed.
 
